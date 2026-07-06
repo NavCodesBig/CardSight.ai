@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+uploads/*
+!uploads/README.md
+datasets/raw
+datasets/rectified
+datasets/masks

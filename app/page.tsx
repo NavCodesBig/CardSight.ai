@@ -1,65 +1,132 @@
-import Image from "next/image";
+import Link from "next/link";
+import { GlassCard } from "@/components/ui/GlassCard";
+
+const FEATURES = [
+  {
+    icon: "🎯",
+    title: "Centering to 0.1 mm",
+    body: "Automatic border measurement with sub-millimeter precision and PSA-standard centering ratios for front and back.",
+  },
+  {
+    icon: "📐",
+    title: "CAD-style measuring",
+    body: "The card outline is detected and calibrated against the true 63.5 × 88.9 mm standard, giving real-world dimension overlays.",
+  },
+  {
+    icon: "🔍",
+    title: "Corner & edge inspection",
+    body: "Whitening, nicks, soft corners and edge wear are detected per region and highlighted directly on your card image.",
+  },
+  {
+    icon: "🗺️",
+    title: "Surface damage heatmap",
+    body: "Scratches, print lines and gloss breaks are mapped cell by cell so you see exactly where a grader would look twice.",
+  },
+  {
+    icon: "🏆",
+    title: "PSA · BGS · CGC estimates",
+    body: "Probability distributions across each company's grade ladder, with confidence scores — not just a single number.",
+  },
+  {
+    icon: "🧠",
+    title: "Built to learn",
+    body: "A training pipeline designed around graded-card datasets, so accuracy improves as labeled examples grow.",
+  },
+];
+
+const STEPS = [
+  { n: "01", title: "Photograph the front", body: "Flat surface, even light, card filling the frame." },
+  { n: "02", title: "Photograph the back", body: "Same setup — the back drives centering and wear checks too." },
+  { n: "03", title: "AI analysis", body: "Outline detection, perspective correction, then four-category inspection." },
+  { n: "04", title: "Full report", body: "Subgrades, measurements, damage map and grading recommendations." },
+];
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="space-y-24">
+      {/* Hero */}
+      <section className="animate-float-up pt-14 text-center">
+        <span className="glass inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium text-muted">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+          AI pre-grading · Pokémon TCG · more games coming
+        </span>
+        <h1 className="mx-auto mt-6 max-w-3xl text-5xl font-bold leading-[1.06] tracking-tight sm:text-6xl">
+          Know your card&apos;s grade
+          <br />
+          <span className="text-gradient">before you submit.</span>
+        </h1>
+        <p className="mx-auto mt-6 max-w-xl text-lg text-muted">
+          Two photos. Millimeter-accurate centering, corner, edge and surface
+          analysis — with transparent PSA, BGS and CGC estimates in seconds.
+        </p>
+        <div className="mx-auto mt-9 flex max-w-xs flex-col items-stretch justify-center gap-3 sm:max-w-none sm:flex-row sm:items-center sm:gap-4">
+          <Link
+            href="/scan"
+            className="animate-pulse-ring rounded-2xl bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] px-8 py-4 text-center font-semibold text-white shadow-xl transition-transform hover:scale-[1.03]"
+          >
+            Scan a card
+          </Link>
+          <Link
+            href="/dashboard"
+            className="glass rounded-2xl px-8 py-4 text-center font-semibold transition-transform hover:scale-[1.03]"
+          >
+            View dashboard
+          </Link>
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section>
+        <h2 className="mb-8 text-center text-3xl font-bold tracking-tight">
+          Like a scanner app, <span className="text-gradient">built for graders</span>
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {STEPS.map((s, i) => (
+            <GlassCard
+              key={s.n}
+              className="animate-float-up p-6"
+              style={{ animationDelay: `${i * 90}ms` }}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              <div className="font-mono text-sm font-bold text-[var(--accent)]">{s.n}</div>
+              <div className="mt-2 font-semibold">{s.title}</div>
+              <p className="mt-1.5 text-sm text-muted">{s.body}</p>
+            </GlassCard>
+          ))}
+        </div>
+      </section>
+
+      {/* Features */}
+      <section>
+        <h2 className="mb-8 text-center text-3xl font-bold tracking-tight">
+          Everything a pre-grade <span className="text-gradient">should tell you</span>
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {FEATURES.map((f, i) => (
+            <GlassCard
+              key={f.title}
+              className="animate-float-up p-6 transition-transform hover:-translate-y-1"
+              style={{ animationDelay: `${i * 70}ms` }}
             >
-              Learning
-            </a>{" "}
-            center.
+              <div className="text-2xl">{f.icon}</div>
+              <div className="mt-3 font-semibold">{f.title}</div>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted">{f.body}</p>
+            </GlassCard>
+          ))}
+        </div>
+      </section>
+
+      {/* Honesty note */}
+      <section>
+        <GlassCard strong className="mx-auto max-w-3xl p-8 text-center">
+          <h3 className="text-xl font-semibold">Transparent by design</h3>
+          <p className="mt-3 text-sm leading-relaxed text-muted">
+            Photos can&apos;t capture everything a grader sees in hand — so CardSight
+            never pretends otherwise. Every estimate ships with a confidence
+            score, every subgrade with the measurements behind it, and every
+            report with a clear explanation of what cost your card points.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        </GlassCard>
+      </section>
     </div>
   );
 }

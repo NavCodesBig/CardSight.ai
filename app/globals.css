@@ -1,26 +1,159 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f6f7fb;
+  --foreground: #10121a;
+  --muted: #5b6070;
+  --card-glass: rgba(255, 255, 255, 0.65);
+  --card-border: rgba(16, 18, 26, 0.08);
+  --accent: #6d5cff;
+  --accent-2: #00c8ff;
+  --glow: rgba(109, 92, 255, 0.25);
+}
+
+.dark {
+  --background: #07080d;
+  --foreground: #eef0f6;
+  --muted: #9aa1b5;
+  --card-glass: rgba(255, 255, 255, 0.045);
+  --card-border: rgba(255, 255, 255, 0.09);
+  --accent: #8b7bff;
+  --accent-2: #38d6ff;
+  --glow: rgba(139, 123, 255, 0.35);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+/* ---------- Glass surfaces ---------- */
+.glass {
+  background: var(--card-glass);
+  border: 1px solid var(--card-border);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+}
+
+.glass-strong {
+  background: var(--card-glass);
+  border: 1px solid var(--card-border);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  box-shadow:
+    0 20px 60px -20px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* ---------- Ambient gradient backdrop ---------- */
+.ambient::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(60rem 40rem at 15% -10%, var(--glow), transparent 60%),
+    radial-gradient(50rem 35rem at 110% 20%, rgba(0, 200, 255, 0.12), transparent 60%),
+    radial-gradient(40rem 40rem at 50% 120%, rgba(255, 92, 180, 0.08), transparent 60%);
+  pointer-events: none;
+}
+
+/* ---------- Text helpers ---------- */
+.text-gradient {
+  background: linear-gradient(100deg, var(--accent) 0%, var(--accent-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------- Animations ---------- */
+@keyframes float-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-float-up {
+  animation: float-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 var(--glow); }
+  70% { box-shadow: 0 0 0 18px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2.2s ease-out infinite;
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.14) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s linear infinite;
+}
+
+@keyframes scanline {
+  0% { top: 0%; }
+  50% { top: calc(100% - 3px); }
+  100% { top: 0%; }
+}
+
+.animate-scanline {
+  animation: scanline 2.6s ease-in-out infinite;
+}
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 4s linear infinite;
+}
+
+/* Grade ring sweep */
+@keyframes ring-sweep {
+  from { stroke-dashoffset: var(--ring-circ, 289); }
+}
+
+.animate-ring-sweep {
+  animation: ring-sweep 1.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
