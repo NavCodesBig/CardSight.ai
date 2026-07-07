@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { PreviousScans } from "@/components/dashboard/PreviousScans";
 
 const FEATURES = [
   {
@@ -74,6 +75,9 @@ export default function Home() {
           </Link>
         </div>
       </section>
+
+      {/* Previous scans — renders only when the browser has history */}
+      <PreviousScans title="Your previous scans" limit={10} />
 
       {/* How it works */}
       <section>

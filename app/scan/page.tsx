@@ -9,6 +9,7 @@ import { gradeLabel } from "@/lib/grading/scale";
 import { ImageCapture } from "@/components/scanner/ImageCapture";
 import { ProcessingOverlay } from "@/components/scanner/ProcessingOverlay";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { PreviousScans } from "@/components/dashboard/PreviousScans";
 
 const TIPS = [
   "Lay the card flat on a dark, matte surface",
@@ -121,6 +122,10 @@ export default function ScanPage() {
           ))}
         </ul>
       </GlassCard>
+
+      <div className="mt-12">
+        <PreviousScans />
+      </div>
 
       {processing && <ProcessingOverlay stage={stage} pct={pct} previewUrl={previewUrl} />}
     </div>
