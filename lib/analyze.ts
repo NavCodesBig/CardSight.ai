@@ -77,10 +77,17 @@ export const STAGE_LABELS: Record<ProgressStage, string> = {
 
 export type ProgressFn = (stage: ProgressStage, pct: number) => void;
 
+/** Optional per-face quad hints from the live camera (in image pixel coords). */
+export interface QuadHints {
+  front?: Quad | null;
+  back?: Quad | null;
+}
+
 export async function analyzeCard(
   frontFile: Blob,
   backFile: Blob,
-  onProgress: ProgressFn = () => {}
+  onProgress: ProgressFn = () => {},
+  hints?: QuadHints
 ): Promise<ScanResult> {
   onProgress("loading", 4);
   const [frontImg, backImg] = await Promise.all([
@@ -90,9 +97,10 @@ export async function analyzeCard(
 
   onProgress("detecting", 14);
   await tick();
-  // Auto-corrects landscape-oriented photos before analysis.
-  const front = detectCardOriented(frontImg);
-  const back = detectCardOriented(backImg);
+  // Prefer the quad the user confirmed in live view; otherwise detect (and
+  // auto-correct landscape-oriented photos) from the image itself.
+  const front = faceDetect(frontImg, hints?.front);
+  const back = faceDetect(backImg, hints?.back);
   const frontDet = front.detection;
   const backDet = back.detection;
 
@@ -199,6 +207,18 @@ async function analyzeFace(
     surface,
     mmPerPx: cal.mmPerPx,
   };
+}
+
+/**
+ * Resolve a face's card quad: trust the live-view hint when present (the user
+ * visually confirmed the lock), else fall back to detecting from the image.
+ */
+function faceDetect(
+  img: ImageData,
+  hint: Quad | null | undefined
+): { image: ImageData; detection: { quad: Quad; confidence: number } } {
+  if (hint) return { image: img, detection: { quad: hint, confidence: 0.9 } };
+  return detectCardOriented(img);
 }
 
 function jitterQuad(q: Quad, dx: number, dy: number): Quad {

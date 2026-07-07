@@ -4,11 +4,12 @@
  * Spawned by lib/runAnalysis.ts; do not import from React code.
  */
 
-import { analyzeCard, type ProgressStage } from "./analyze";
+import { analyzeCard, type ProgressStage, type QuadHints } from "./analyze";
 
 export interface WorkerRequest {
   front: Blob;
   back: Blob;
+  hints?: QuadHints;
 }
 
 export type WorkerResponse =
@@ -19,8 +20,11 @@ export type WorkerResponse =
 self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   const post = (msg: WorkerResponse) => self.postMessage(msg);
   try {
-    const result = await analyzeCard(e.data.front, e.data.back, (stage, pct) =>
-      post({ type: "progress", stage, pct })
+    const result = await analyzeCard(
+      e.data.front,
+      e.data.back,
+      (stage, pct) => post({ type: "progress", stage, pct }),
+      e.data.hints
     );
     post({ type: "done", result });
   } catch (err) {

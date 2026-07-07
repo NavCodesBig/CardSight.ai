@@ -4,28 +4,30 @@
  * workers are unavailable or the worker fails to boot.
  */
 
-import { analyzeCard, type ProgressFn, type ScanResult } from "./analyze";
+import { analyzeCard, type ProgressFn, type QuadHints, type ScanResult } from "./analyze";
 import type { WorkerResponse } from "./analysisWorker";
 
 export async function runAnalysis(
   front: Blob,
   back: Blob,
-  onProgress: ProgressFn
+  onProgress: ProgressFn,
+  hints?: QuadHints
 ): Promise<ScanResult> {
   if (typeof Worker !== "undefined") {
     try {
-      return await runInWorker(front, back, onProgress);
+      return await runInWorker(front, back, onProgress, hints);
     } catch (err) {
       console.warn("Worker analysis failed, falling back to main thread:", err);
     }
   }
-  return analyzeCard(front, back, onProgress);
+  return analyzeCard(front, back, onProgress, hints);
 }
 
 function runInWorker(
   front: Blob,
   back: Blob,
-  onProgress: ProgressFn
+  onProgress: ProgressFn,
+  hints?: QuadHints
 ): Promise<ScanResult> {
   return new Promise((resolve, reject) => {
     let worker: Worker;
@@ -49,6 +51,6 @@ function runInWorker(
     };
     worker.onerror = (e) => done(() => reject(e.error ?? new Error(e.message)));
 
-    worker.postMessage({ front, back });
+    worker.postMessage({ front, back, hints });
   });
 }

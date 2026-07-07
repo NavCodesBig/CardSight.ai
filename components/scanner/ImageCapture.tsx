@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { CameraCapture } from "./CameraCapture";
+import type { Quad } from "@/lib/vision/types";
 
 /* Static capability check, hydration-safe: server snapshot says no camera,
  * the client snapshot flips it on after hydration. */
@@ -17,7 +18,7 @@ export function ImageCapture({
 }: {
   label: string;
   file: File | null;
-  onSelect: (f: File) => void;
+  onSelect: (f: File, quad?: Quad) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -30,9 +31,9 @@ export function ImageCapture({
   );
 
   const handle = useCallback(
-    (f: File | undefined) => {
+    (f: File | undefined, quad?: Quad) => {
       if (!f || !f.type.startsWith("image/")) return;
-      onSelect(f);
+      onSelect(f, quad);
       const url = URL.createObjectURL(f);
       setPreview((old) => {
         if (old) URL.revokeObjectURL(old);

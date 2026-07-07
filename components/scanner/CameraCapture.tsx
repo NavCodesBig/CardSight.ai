@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { detectCard } from "@/lib/vision/cardDetector";
-import type { Quad } from "@/lib/vision/types";
+import type { Point, Quad } from "@/lib/vision/types";
 
 type DetectState = "searching" | "far" | "close" | "found" | "unavailable";
 
@@ -33,7 +33,7 @@ export function CameraCapture({
   onClose,
 }: {
   label: string;
-  onCapture: (file: File) => void;
+  onCapture: (file: File, quad?: Quad) => void;
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -153,13 +153,15 @@ export function CameraCapture({
     full.height = vh;
     full.getContext("2d")!.drawImage(video, 0, 0);
 
-    // Detect the card on this frame and crop to it (with margin) so the
-    // analyzed region matches the outline the user framed, instead of the
-    // whole camera frame being re-detected downstream.
+    // Detect the card on this exact frame, crop to it (with margin), and pass
+    // the precise quad along in crop coordinates. Analysis then rectifies with
+    // this quad instead of re-detecting, so the result matches the outline the
+    // user framed — no second, divergent detection, no warp from a bad quad.
     let sx = 0;
     let sy = 0;
     let sw = vw;
     let sh = vh;
+    let quad: Quad | undefined;
     try {
       const s = WORK_WIDTH / vw;
       const work = document.createElement("canvas");
@@ -169,11 +171,13 @@ export function CameraCapture({
       wctx.drawImage(full, 0, 0, work.width, work.height);
       const det = detectCard(wctx.getImageData(0, 0, work.width, work.height));
       if (det.confidence > MIN_CONF) {
-        const box = boundingBox(det.quad, 1 / s, vw, vh);
+        const inv = 1 / s;
+        const box = boundingBox(det.quad, inv, vw, vh);
         ({ sx, sy, sw, sh } = box);
+        quad = mapQuadToCrop(det.quad, inv, sx, sy);
       }
     } catch {
-      // Fall back to the full frame on any detection failure.
+      // Fall back to the full frame + downstream detection on any failure.
     }
 
     const out = document.createElement("canvas");
@@ -183,7 +187,12 @@ export function CameraCapture({
     out.toBlob(
       (blob) => {
         if (!blob) return;
-        onCapture(new File([blob], `${label.toLowerCase().replace(/\s+/g, "-")}.jpg`, { type: "image/jpeg" }));
+        const file = new File(
+          [blob],
+          `${label.toLowerCase().replace(/\s+/g, "-")}.jpg`,
+          { type: "image/jpeg" }
+        );
+        onCapture(file, quad);
         onClose();
       },
       "image/jpeg",
@@ -251,6 +260,12 @@ export function CameraCapture({
       </div>
     </div>
   );
+}
+
+/** Map a work-space quad into the cropped output image's pixel coordinates. */
+function mapQuadToCrop(q: Quad, inv: number, sx: number, sy: number): Quad {
+  const m = (p: Point): Point => ({ x: p.x * inv - sx, y: p.y * inv - sy });
+  return { tl: m(q.tl), tr: m(q.tr), br: m(q.br), bl: m(q.bl) };
 }
 
 /**

@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { type ProgressStage } from "@/lib/analyze";
+import type { Quad } from "@/lib/vision/types";
 import { runAnalysis } from "@/lib/runAnalysis";
 import { saveScan } from "@/lib/storage";
 import { gradeLabel } from "@/lib/grading/scale";
@@ -22,6 +23,8 @@ export default function ScanPage() {
   const router = useRouter();
   const [front, setFront] = useState<File | null>(null);
   const [back, setBack] = useState<File | null>(null);
+  const [frontQuad, setFrontQuad] = useState<Quad | null>(null);
+  const [backQuad, setBackQuad] = useState<Quad | null>(null);
   const [processing, setProcessing] = useState(false);
   const [stage, setStage] = useState<ProgressStage>("loading");
   const [pct, setPct] = useState(0);
@@ -37,10 +40,15 @@ export default function ScanPage() {
     const preview = URL.createObjectURL(front);
     setPreviewUrl(preview);
     try {
-      const result = await runAnalysis(front, back, (s, p) => {
-        setStage(s);
-        setPct(p);
-      });
+      const result = await runAnalysis(
+        front,
+        back,
+        (s, p) => {
+          setStage(s);
+          setPct(p);
+        },
+        { front: frontQuad, back: backQuad }
+      );
       const quality = [...result.front.quality.warnings, ...result.back.quality.warnings];
       const detectionWeak = result.detectionConfidence < 0.5;
       if (detectionWeak || !result.front.quality.usable || !result.back.quality.usable) {
@@ -64,7 +72,7 @@ export default function ScanPage() {
     } finally {
       URL.revokeObjectURL(preview);
     }
-  }, [front, back, router]);
+  }, [front, back, frontQuad, backQuad, router]);
 
   return (
     <div className="animate-float-up">
@@ -81,11 +89,25 @@ export default function ScanPage() {
       <div className="mt-10 flex flex-col items-center justify-center gap-6 sm:flex-row">
         <div className="flex flex-col items-center gap-3">
           <span className="text-sm font-semibold text-muted">Step 1 · Front</span>
-          <ImageCapture label="Capture front" file={front} onSelect={setFront} />
+          <ImageCapture
+            label="Capture front"
+            file={front}
+            onSelect={(f, q) => {
+              setFront(f);
+              setFrontQuad(q ?? null);
+            }}
+          />
         </div>
         <div className="flex flex-col items-center gap-3">
           <span className="text-sm font-semibold text-muted">Step 2 · Back</span>
-          <ImageCapture label="Capture back" file={back} onSelect={setBack} />
+          <ImageCapture
+            label="Capture back"
+            file={back}
+            onSelect={(f, q) => {
+              setBack(f);
+              setBackQuad(q ?? null);
+            }}
+          />
         </div>
       </div>
 
