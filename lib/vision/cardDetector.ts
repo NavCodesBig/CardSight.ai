@@ -99,42 +99,102 @@ export function detectCard(img: ImageData): DetectionResult {
     bl: intersectVH(left, bottom),
   };
 
-  // Sanity checks: corners inside frame, sensible area, card-like aspect.
+  // The four intersected lines always produce *a* quad — even from a hand or a
+  // cluttered background. Gate confidence on whether that quad is actually
+  // card-shaped: inside the frame, convex, roughly right-angled, with opposite
+  // sides of similar length and a trading-card aspect ratio. This is what
+  // rejects skewed false locks (edges caught on a hand) and degenerate
+  // near-triangles (no card present).
   const pts = [quad.tl, quad.tr, quad.br, quad.bl];
   const inFrame = pts.every(
     (p) => p.x > -w * 0.05 && p.x < w * 1.05 && p.y > -h * 0.05 && p.y < h * 1.05
   );
-  const quadW = (dist(quad.tl, quad.tr) + dist(quad.bl, quad.br)) / 2;
-  const quadH = (dist(quad.tl, quad.bl) + dist(quad.tr, quad.br)) / 2;
-  const area = quadW * quadH;
-  const coverage = area / (w * h);
-  const aspect = quadW / quadH;
-  const expectedAspect = CARD_WIDTH_MM / CARD_HEIGHT_MM; // ≈ 0.714
-  const aspectOk = aspect > expectedAspect * 0.72 && aspect < expectedAspect * 1.4;
 
-  let confidence = 0.5;
-  if (inFrame) confidence += 0.2;
-  if (coverage > 0.25 && coverage < 0.98) confidence += 0.15;
-  if (aspectOk) confidence += 0.15;
-  // Consistency of the fitted side points raises confidence.
+  const g = quadGeometry(quad);
+  const coverage = g.area / (w * h);
+  const expectedAspect = CARD_WIDTH_MM / CARD_HEIGHT_MM; // ≈ 0.714
+
+  const valid =
+    inFrame &&
+    g.convex &&
+    coverage > 0.16 &&
+    coverage < 0.97 &&
+    g.aspect > expectedAspect * 0.82 && // ~0.59
+    g.aspect < expectedAspect * 1.22 && // ~0.87
+    g.oppRatioH > 0.7 &&
+    g.oppRatioV > 0.7 &&
+    g.maxAngleDev < 22 &&
+    g.minSide > w * 0.1;
+
+  if (!valid) {
+    // Not card-shaped — report low confidence so the live overlay won't lock
+    // and the pipeline treats detection as unreliable.
+    return { quad, confidence: 0.2 };
+  }
+
+  // Consistency of the fitted side points sharpens a valid detection.
   const density =
     (leftPts.length + rightPts.length + topPts.length + bottomPts.length) /
     ((yEnd - yStart) / 3 + (xEnd - xStart) / 3) / 2;
-  confidence = Math.min(1, confidence * Math.min(1, density + 0.5));
-
-  if (!inFrame || coverage < 0.15) {
-    return {
-      quad: {
-        tl: { x: 0, y: 0 },
-        tr: { x: w - 1, y: 0 },
-        br: { x: w - 1, y: h - 1 },
-        bl: { x: 0, y: h - 1 },
-      },
-      confidence: 0.15,
-    };
-  }
+  const squareness = 1 - g.maxAngleDev / 22; // 0..1
+  const confidence = Math.min(
+    1,
+    0.62 + 0.25 * Math.min(1, density) + 0.1 * squareness
+  );
 
   return { quad, confidence };
+}
+
+interface QuadGeometry {
+  area: number;
+  aspect: number; // width / height
+  oppRatioH: number; // min/max of top vs bottom side length
+  oppRatioV: number; // min/max of left vs right side length
+  minSide: number;
+  maxAngleDev: number; // largest corner deviation from 90°, degrees
+  convex: boolean;
+}
+
+/** Shape metrics used to decide whether a quad is really a card. */
+function quadGeometry(q: Quad): QuadGeometry {
+  const top = dist(q.tl, q.tr);
+  const right = dist(q.tr, q.br);
+  const bottom = dist(q.br, q.bl);
+  const left = dist(q.bl, q.tl);
+  const wAvg = (top + bottom) / 2;
+  const hAvg = (left + right) / 2;
+
+  const corners = [q.tl, q.tr, q.br, q.bl];
+  let maxAngleDev = 0;
+  let sign = 0;
+  let convex = true;
+  for (let i = 0; i < 4; i++) {
+    const prev = corners[(i + 3) % 4];
+    const cur = corners[i];
+    const next = corners[(i + 1) % 4];
+    const ax = prev.x - cur.x, ay = prev.y - cur.y;
+    const bx = next.x - cur.x, by = next.y - cur.y;
+    const dot = ax * bx + ay * by;
+    const mag = Math.hypot(ax, ay) * Math.hypot(bx, by) || 1;
+    const angle = (Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180) / Math.PI;
+    maxAngleDev = Math.max(maxAngleDev, Math.abs(angle - 90));
+    const cross = ax * by - ay * bx;
+    if (cross !== 0) {
+      const s = Math.sign(cross);
+      if (sign === 0) sign = s;
+      else if (s !== sign) convex = false;
+    }
+  }
+
+  return {
+    area: wAvg * hAvg,
+    aspect: wAvg / (hAvg || 1),
+    oppRatioH: Math.min(top, bottom) / (Math.max(top, bottom) || 1),
+    oppRatioV: Math.min(left, right) / (Math.max(left, right) || 1),
+    minSide: Math.min(top, right, bottom, left),
+    maxAngleDev,
+    convex,
+  };
 }
 
 function dist(a: Point, b: Point): number {

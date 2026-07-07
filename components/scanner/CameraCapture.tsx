@@ -9,7 +9,7 @@ type DetectState = "searching" | "far" | "close" | "found" | "unavailable";
 const DETECT_INTERVAL_MS = 140; // run detection ~7×/sec
 const WORK_WIDTH = 380; // downscaled analysis width
 const SMOOTH = 0.4; // per-frame lerp toward the newest detection (0..1)
-const MIN_CONF = 0.5;
+const MIN_CONF = 0.6;
 const NEAR_COVERAGE = 0.3; // below → "move closer"
 const FAR_COVERAGE = 0.9; // above → "move back"
 
