@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { analyzeCard, type ProgressStage } from "@/lib/analyze";
+import { type ProgressStage } from "@/lib/analyze";
+import { runAnalysis } from "@/lib/runAnalysis";
 import { saveScan } from "@/lib/storage";
 import { gradeLabel } from "@/lib/grading/scale";
 import { ImageCapture } from "@/components/scanner/ImageCapture";
@@ -32,9 +33,10 @@ export default function ScanPage() {
     setError(null);
     setWarnings([]);
     setProcessing(true);
-    setPreviewUrl(URL.createObjectURL(front));
+    const preview = URL.createObjectURL(front);
+    setPreviewUrl(preview);
     try {
-      const result = await analyzeCard(front, back, (s, p) => {
+      const result = await runAnalysis(front, back, (s, p) => {
         setStage(s);
         setPct(p);
       });
@@ -50,6 +52,8 @@ export default function ScanPage() {
       console.error(e);
       setError("Analysis failed — try different photos with better lighting.");
       setProcessing(false);
+    } finally {
+      URL.revokeObjectURL(preview);
     }
   }, [front, back, router]);
 

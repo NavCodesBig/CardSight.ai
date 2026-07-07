@@ -5,7 +5,8 @@
  * integration point for future server-side model inference.
  */
 
-import { detectCard, quadCoverage, rectifyCard } from "./vision/cardDetector";
+import { detectCardOriented, quadCoverage, rectifyCard } from "./vision/cardDetector";
+import type { Quad } from "./vision/types";
 import { fileToImageData, imageDataToDataUrl } from "./vision/imageOps";
 import { assessQuality } from "./vision/quality";
 import { measureCentering } from "./vision/centering";
@@ -79,18 +80,21 @@ export async function analyzeCard(
 
   onProgress("detecting", 14);
   await tick();
-  const frontDet = detectCard(frontImg);
-  const backDet = detectCard(backImg);
+  // Auto-corrects landscape-oriented photos before analysis.
+  const front = detectCardOriented(frontImg);
+  const back = detectCardOriented(backImg);
+  const frontDet = front.detection;
+  const backDet = back.detection;
 
   onProgress("rectifying", 26);
   await tick();
-  const frontRect = rectifyCard(frontImg, frontDet.quad);
-  const backRect = rectifyCard(backImg, backDet.quad);
+  const frontRect = rectifyCard(front.image, frontDet.quad);
+  const backRect = rectifyCard(back.image, backDet.quad);
 
   onProgress("quality", 36);
   await tick();
-  const frontFace = await analyzeFace(frontImg, frontDet.quad, frontRect, onProgress, true);
-  const backFace = await analyzeFace(backImg, backDet.quad, backRect, onProgress, false);
+  const frontFace = await analyzeFace(front.image, frontDet.quad, frontRect, onProgress, true);
+  const backFace = await analyzeFace(back.image, backDet.quad, backRect, onProgress, false);
 
   onProgress("recognizing", 84);
   await tick();
@@ -122,7 +126,7 @@ export async function analyzeCard(
 
 async function analyzeFace(
   original: ImageData,
-  quad: FaceQuad,
+  quad: Quad,
   rect: ImageData,
   onProgress: ProgressFn,
   isFront: boolean
@@ -149,7 +153,7 @@ async function analyzeFace(
   const cal = calibrate(rect.width, rect.height);
 
   return {
-    rectifiedDataUrl: imageDataToDataUrl(rect, 0.82),
+    rectifiedDataUrl: await imageDataToDataUrl(rect, 0.82),
     rectifiedWidth: rect.width,
     rectifiedHeight: rect.height,
     quality,
@@ -160,8 +164,6 @@ async function analyzeFace(
     mmPerPx: cal.mmPerPx,
   };
 }
-
-type FaceQuad = ReturnType<typeof detectCard>["quad"];
 
 /** Yield to the event loop so the processing UI can animate. */
 function tick(): Promise<void> {

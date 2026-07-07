@@ -16,11 +16,12 @@ class NodeImageData {
 }
 (globalThis as Record<string, unknown>).ImageData = NodeImageData;
 
-import { detectCard, rectifyCard } from "../lib/vision/cardDetector";
+import { detectCard, detectCardOriented, rectifyCard } from "../lib/vision/cardDetector";
 import { measureCentering } from "../lib/vision/centering";
 import { analyzeCorners } from "../lib/vision/corners";
 import { analyzeEdges } from "../lib/vision/edges";
 import { analyzeSurface } from "../lib/vision/surface";
+import { rotate90 } from "../lib/vision/imageOps";
 
 // ---- Build synthetic scene ----
 const W = 1000, H = 1200;
@@ -128,6 +129,30 @@ check(
   surface.score >= 8,
   `score=${surface.score} density=${surface.defectDensity}`
 );
+
+// Landscape robustness: rotate the whole scene 90° (card photographed
+// sideways) and confirm oriented detection recovers portrait + centering.
+{
+  const landscape = rotate90(img);
+  const oriented = detectCardOriented(landscape);
+  const oq = oriented.detection.quad;
+  const ow = Math.hypot(oq.tr.x - oq.tl.x, oq.tr.y - oq.tl.y);
+  const oh = Math.hypot(oq.bl.x - oq.tl.x, oq.bl.y - oq.tl.y);
+  check(
+    "landscape: oriented detection recovers portrait card",
+    oh > ow,
+    `w=${ow.toFixed(0)} h=${oh.toFixed(0)} conf=${oriented.detection.confidence.toFixed(2)}`
+  );
+  const orect = rectifyCard(oriented.image, oriented.detection.quad);
+  const oc = measureCentering(orect);
+  // Correction applies a second clockwise turn → net 180°: sides mirror
+  // (left 37.5 → right), worst-side ratio and score are unchanged.
+  check(
+    "landscape: centering ratio survives rotation (62.5/37.5 mirrored)",
+    Math.abs(oc.leftPct - 62.5) < 5 && Math.abs(oc.topPct - 50) < 5,
+    `L=${oc.leftPct}% R=${oc.rightPct}% T=${oc.topPct}% B=${oc.bottomPct}%`
+  );
+}
 
 console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);

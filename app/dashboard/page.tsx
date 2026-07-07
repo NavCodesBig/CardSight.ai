@@ -108,7 +108,13 @@ function ScanGrid({
           <Link href={`/results/${s.id}`} className="block p-4">
             <div className="relative mx-auto aspect-[63.5/88.9] w-full max-w-[130px] overflow-hidden rounded-xl">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={s.thumbDataUrl} alt={s.label} className="h-full w-full object-cover" />
+              <img
+                src={s.thumbDataUrl}
+                alt={s.label}
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full object-cover"
+              />
               {s.favorite && (
                 <span className="absolute right-1 top-1 text-sm drop-shadow">★</span>
               )}

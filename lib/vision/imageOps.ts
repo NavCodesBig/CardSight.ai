@@ -10,6 +10,7 @@ import type { GrayImage, Point, Quad } from "./types";
  * Decode a File/Blob into ImageData, downscaled so max(w, h) <= maxDim.
  * Phone cameras store rotation as EXIF, so orientation must be applied
  * during decode or portrait shots arrive sideways and detection fails.
+ * Works on the main thread and inside Web Workers (OffscreenCanvas).
  */
 export async function fileToImageData(
   file: Blob,
@@ -19,10 +20,7 @@ export async function fileToImageData(
   const scale = Math.min(1, maxDim / Math.max(source.width, source.height));
   const w = Math.max(1, Math.round(source.width * scale));
   const h = Math.max(1, Math.round(source.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  const ctx = make2dContext(w, h);
   ctx.drawImage(source, 0, 0, w, h);
   if (source instanceof ImageBitmap) source.close();
   return ctx.getImageData(0, 0, w, h);
@@ -34,6 +32,7 @@ async function decodeWithOrientation(
   try {
     return await createImageBitmap(file, { imageOrientation: "from-image" });
   } catch {
+    if (typeof document === "undefined") throw new Error("decode failed in worker");
     // Fallback: <img> decode applies EXIF orientation in all modern browsers.
     const url = URL.createObjectURL(file);
     try {
@@ -46,6 +45,20 @@ async function decodeWithOrientation(
       URL.revokeObjectURL(url);
     }
   }
+}
+
+type Ctx2d = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+function make2dContext(w: number, h: number): Ctx2d {
+  if (typeof document !== "undefined") {
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    return canvas.getContext("2d", { willReadFrequently: true })!;
+  }
+  return new OffscreenCanvas(w, h).getContext("2d", {
+    willReadFrequently: true,
+  }) as OffscreenCanvasRenderingContext2D;
 }
 
 export function toGray(img: ImageData): GrayImage {
@@ -219,13 +232,47 @@ export function warpQuad(
   return out;
 }
 
-/** Encode ImageData to a JPEG data URL for storage/display. */
-export function imageDataToDataUrl(img: ImageData, quality = 0.85): string {
-  const canvas = document.createElement("canvas");
-  canvas.width = img.width;
-  canvas.height = img.height;
-  canvas.getContext("2d")!.putImageData(img, 0, 0);
-  return canvas.toDataURL("image/jpeg", quality);
+/** Encode ImageData to a JPEG data URL for storage/display.
+ *  Async so it also works in Web Workers via OffscreenCanvas. */
+export async function imageDataToDataUrl(
+  img: ImageData,
+  quality = 0.85
+): Promise<string> {
+  if (typeof document !== "undefined") {
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    canvas.getContext("2d")!.putImageData(img, 0, 0);
+    return canvas.toDataURL("image/jpeg", quality);
+  }
+  const off = new OffscreenCanvas(img.width, img.height);
+  off.getContext("2d")!.putImageData(img, 0, 0);
+  const blob = await off.convertToBlob({ type: "image/jpeg", quality });
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Rotate an image 90° clockwise (for cards photographed in landscape). */
+export function rotate90(src: ImageData): ImageData {
+  const { width: w, height: h } = src;
+  const out = new ImageData(h, w);
+  const s = src.data;
+  const d = out.data;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const si = (y * w + x) * 4;
+      const di = (x * h + (h - 1 - y)) * 4;
+      d[di] = s[si];
+      d[di + 1] = s[si + 1];
+      d[di + 2] = s[si + 2];
+      d[di + 3] = 255;
+    }
+  }
+  return out;
 }
 
 /** Extract a sub-rectangle of an ImageData. */

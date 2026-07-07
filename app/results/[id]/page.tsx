@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getScan, toggleFavorite } from "@/lib/storage";
+import { shareOrDownloadReport } from "@/lib/reportCard";
 import type { ScanResult } from "@/lib/analyze";
 import { gradeLabel, SUBGRADE_WEIGHTS, type SubgradeKey } from "@/lib/grading/scale";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -27,6 +28,7 @@ export default function ResultsPage() {
   const [scan, setScan] = useState<ScanResult | null | undefined>(undefined);
   const [face, setFace] = useState<"front" | "back">("front");
   const [fav, setFav] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     getScan(id).then((s) => {
@@ -137,6 +139,7 @@ export default function ResultsPage() {
               <button
                 key={f}
                 onClick={() => setFace(f)}
+                aria-pressed={face === f}
                 className={`rounded-full px-4 py-1.5 capitalize transition-colors ${
                   face === f ? "bg-[var(--accent)] text-white" : "text-muted"
                 }`}
@@ -223,13 +226,27 @@ export default function ResultsPage() {
         </div>
       </section>
 
-      <div className="flex justify-center gap-4 pt-4">
+      <div className="flex flex-wrap justify-center gap-3 pt-4 sm:gap-4">
         <Link
           href="/scan"
           className="rounded-2xl bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] px-8 py-3.5 font-semibold text-white shadow-xl transition-transform hover:scale-[1.03]"
         >
           Scan another card
         </Link>
+        <button
+          onClick={async () => {
+            setSharing(true);
+            try {
+              await shareOrDownloadReport(scan);
+            } finally {
+              setSharing(false);
+            }
+          }}
+          disabled={sharing}
+          className="glass rounded-2xl px-8 py-3.5 font-semibold transition-transform hover:scale-[1.03] disabled:opacity-50"
+        >
+          {sharing ? "Rendering…" : "📤 Share report"}
+        </button>
         <Link href="/dashboard" className="glass rounded-2xl px-8 py-3.5 font-semibold">
           Dashboard
         </Link>

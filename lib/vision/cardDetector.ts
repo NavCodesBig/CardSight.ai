@@ -13,6 +13,7 @@ import {
   fitLine,
   gradientMagnitude,
   intersectVH,
+  rotate90,
   toGray,
   warpQuad,
 } from "./imageOps";
@@ -147,6 +148,28 @@ export const RECTIFIED_HEIGHT = Math.round(CARD_HEIGHT_MM * 10); // 889
 /** Rectify the detected quad to a canonical card-shaped image. */
 export function rectifyCard(img: ImageData, quad: Quad): ImageData {
   return warpQuad(img, quad, RECTIFIED_WIDTH, RECTIFIED_HEIGHT);
+}
+
+/**
+ * Detect the card, auto-correcting a landscape-oriented photo: if the found
+ * quad is wider than tall (cards are portrait), rotate 90° and re-detect,
+ * keeping whichever orientation detects with more confidence.
+ */
+export function detectCardOriented(img: ImageData): {
+  image: ImageData;
+  detection: DetectionResult;
+} {
+  const det = detectCard(img);
+  const w = (dist(det.quad.tl, det.quad.tr) + dist(det.quad.bl, det.quad.br)) / 2;
+  const h = (dist(det.quad.tl, det.quad.bl) + dist(det.quad.tr, det.quad.br)) / 2;
+  if (w > h * 1.1) {
+    const rotated = rotate90(img);
+    const det2 = detectCard(rotated);
+    if (det2.confidence >= det.confidence - 0.1) {
+      return { image: rotated, detection: det2 };
+    }
+  }
+  return { image: img, detection: det };
 }
 
 /** Fraction of the source frame occupied by the quad (for "move closer"). */
