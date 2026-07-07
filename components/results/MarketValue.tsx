@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ScanResult } from "@/lib/analyze";
-import type { MarketData } from "@/lib/pricing/types";
-import { lookupMarket, searchMarket } from "@/lib/pricing/lookup";
+import type { Candidate, MarketData } from "@/lib/pricing/types";
+import {
+  buildMarket,
+  emptyMarket,
+  fetchCandidates,
+  readCardText,
+} from "@/lib/pricing/lookup";
 import { updateScanMarket } from "@/lib/storage";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
@@ -11,39 +16,51 @@ import { Badge } from "@/components/ui/Badge";
 type Status = "loading" | "ready" | "error";
 
 /**
- * Market value panel. On first view it OCRs the card and fetches the raw market
- * price, then projects estimated graded values; the result is cached onto the
- * stored scan. A manual search covers cards OCR can't read.
+ * Market value panel. On first view it OCRs the card, fetches ranked candidate
+ * matches and auto-selects the best; the user can pick another candidate or
+ * search by name if recognition misses. The selected result is cached onto the
+ * stored scan. The search box is always available.
  */
 export function MarketValue({ scan }: { scan: ScanResult }) {
   const likelyPsa =
     scan.companyEstimates.find((e) => e.company === "PSA")?.mostLikely ??
     scan.grade.overall;
 
-  const [market, setMarket] = useState<MarketData | null>(scan.market ?? null);
+  const [selected, setSelected] = useState<MarketData | null>(scan.market ?? null);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [status, setStatus] = useState<Status>(scan.market ? "ready" : "loading");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(scan.market?.query.name ?? "");
 
-  const persist = useCallback(
-    async (m: MarketData) => {
-      setMarket(m);
+  const choose = useCallback(
+    async (
+      q: { name: string | null; number: string | null },
+      cand: Candidate | null
+    ) => {
+      const market = cand ? buildMarket(q, cand, likelyPsa) : emptyMarket(q);
+      setSelected(market);
       setStatus("ready");
-      await updateScanMarket(scan.id, m);
+      await updateScanMarket(scan.id, market);
     },
-    [scan.id]
+    [scan.id, likelyPsa]
   );
 
+  // Auto-identify on first view.
   useEffect(() => {
-    if (scan.market) return; // already looked up
+    if (scan.market) return;
     let alive = true;
-    setStatus("loading");
-    lookupMarket(scan.front.rectifiedDataUrl, likelyPsa)
-      .then((m) => {
-        if (alive) persist(m);
-      })
-      .catch(() => {
+    (async () => {
+      try {
+        const { name, number } = await readCardText(scan.front.rectifiedDataUrl);
+        if (!alive) return;
+        if (name) setQuery(name);
+        const list = name ? await fetchCandidates(name, number) : [];
+        if (!alive) return;
+        setCandidates(list);
+        await choose({ name, number }, list[0] ?? null);
+      } catch {
         if (alive) setStatus("error");
-      });
+      }
+    })();
     return () => {
       alive = false;
     };
@@ -52,64 +69,70 @@ export function MarketValue({ scan }: { scan: ScanResult }) {
 
   const runSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (query.trim().length < 2) return;
+    const name = query.trim();
+    if (name.length < 2) return;
     setStatus("loading");
     try {
-      await persist(await searchMarket(query, likelyPsa));
+      const list = await fetchCandidates(name, null);
+      setCandidates(list);
+      await choose({ name, number: null }, list[0] ?? null);
     } catch {
       setStatus("error");
     }
   };
 
+  const card = selected?.card;
+  const others = candidates.filter((c) => c.id !== selectedIdOf(selected, candidates));
+
   return (
     <section>
       <h2 className="mb-4 text-xl font-bold tracking-tight">Market value</h2>
       <GlassCard className="p-6">
-        {status === "loading" && (
+        {status === "loading" ? (
           <div className="flex items-center gap-3 py-6 text-muted">
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent" />
             Identifying card &amp; fetching prices…
           </div>
-        )}
-
-        {status === "error" && (
-          <p className="py-4 text-sm text-rose-400">
-            Couldn&apos;t reach the price service. Try a manual search below.
-          </p>
-        )}
-
-        {status === "ready" && market && (
+        ) : (
           <>
-            {market.identified && market.card ? (
+            {status === "error" && (
+              <p className="mb-4 text-sm text-rose-400">
+                Couldn&apos;t reach the price service. Search by name below to retry.
+              </p>
+            )}
+
+            {status === "ready" && selected && card && (
               <div className="flex flex-col gap-6 sm:flex-row">
-                {market.card.imageUrl && (
+                {card.imageUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={market.card.imageUrl}
-                    alt={market.card.name}
+                    src={card.imageUrl}
+                    alt={card.name}
                     className="w-28 shrink-0 self-center rounded-xl shadow-lg sm:self-start"
                   />
                 )}
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-lg font-bold">{market.card.name}</span>
-                    {market.card.rarity && <Badge tone="accent">{market.card.rarity}</Badge>}
+                    <span className="text-lg font-bold">{card.name}</span>
+                    {card.rarity && <Badge tone="accent">{card.rarity}</Badge>}
                   </div>
                   <div className="mt-0.5 text-sm text-muted">
-                    {market.card.setName}
-                    {market.card.number && ` · #${market.card.number}`}
+                    {card.setName}
+                    {card.number && ` · #${card.number}`}
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {market.raw && (
+                    {selected.raw ? (
                       <PriceTile
                         label="Raw (market)"
-                        amount={market.raw.amount}
-                        currency={market.raw.currency}
+                        amount={selected.raw.amount}
+                        currency={selected.raw.currency}
                         highlight
                       />
+                    ) : (
+                      <PriceTile label="Raw (market)" amount={null} currency="USD" highlight />
                     )}
-                    {market.graded.map((g) => (
+                    {selected.graded.map((g) => (
                       <PriceTile
                         key={g.label}
                         label={g.label}
@@ -120,13 +143,15 @@ export function MarketValue({ scan }: { scan: ScanResult }) {
                   </div>
 
                   <p className="mt-4 text-xs text-muted">
-                    Raw price via {market.source ?? "market data"}. Graded values are{" "}
-                    <strong>rough estimates</strong> projected from the raw price and the
-                    predicted grade — not real graded sales.
+                    {selected.raw
+                      ? `Raw price via ${selected.source ?? "market data"}. `
+                      : "No market price listed for this card. "}
+                    Graded values are <strong>rough estimates</strong> projected from the raw
+                    price and the predicted grade — not real graded sales.
                   </p>
-                  {market.card.tcgUrl && (
+                  {card.tcgUrl && (
                     <a
-                      href={market.card.tcgUrl}
+                      href={card.tcgUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="mt-2 inline-block text-sm font-semibold text-[var(--accent)]"
@@ -136,19 +161,60 @@ export function MarketValue({ scan }: { scan: ScanResult }) {
                   )}
                 </div>
               </div>
-            ) : (
+            )}
+
+            {status === "ready" && selected && !card && (
               <p className="text-sm text-muted">
                 Couldn&apos;t identify this card automatically
-                {market.query.name ? ` (read: “${market.query.name}”)` : ""}. Search by name
-                below.
+                {selected.query.name ? ` (read: “${selected.query.name}”)` : ""}. Search by
+                name below.
               </p>
             )}
 
-            <form onSubmit={runSearch} className="mt-5 flex gap-2 border-t border-[var(--card-border)] pt-4">
+            {/* Alternatives */}
+            {others.length > 0 && (
+              <div className="mt-5 border-t border-[var(--card-border)] pt-4">
+                <div className="mb-2 text-xs font-semibold text-muted">
+                  Not the right card? Pick a match:
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {others.slice(0, 6).map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => choose(selected?.query ?? { name: query, number: null }, c)}
+                      className="flex items-center gap-3 rounded-xl px-2 py-1.5 text-left text-sm hover:bg-[var(--card-border)]/40"
+                    >
+                      {c.imageUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={c.imageUrl} alt="" className="h-10 w-auto rounded shadow" />
+                      )}
+                      <span className="flex-1">
+                        <span className="font-medium">{c.name}</span>
+                        <span className="text-muted">
+                          {" "}
+                          · {c.setName} #{c.number}
+                        </span>
+                      </span>
+                      {c.raw && (
+                        <span className="font-mono text-xs text-muted">
+                          {formatMoney(c.raw.amount, c.raw.currency)}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Search — always available */}
+            <form
+              onSubmit={runSearch}
+              className="mt-5 flex gap-2 border-t border-[var(--card-border)] pt-4"
+            >
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={market.identified ? "Wrong card? Search by name" : "e.g. Charizard"}
+                placeholder="Search by card name (e.g. Charizard)"
                 className="flex-1 rounded-xl border border-[var(--card-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
               />
               <button
@@ -166,6 +232,15 @@ export function MarketValue({ scan }: { scan: ScanResult }) {
   );
 }
 
+/** The candidate id currently shown, matched back from the selected card. */
+function selectedIdOf(selected: MarketData | null, candidates: Candidate[]): string | null {
+  if (!selected?.card) return null;
+  const match = candidates.find(
+    (c) => c.name === selected.card!.name && c.number === selected.card!.number
+  );
+  return match?.id ?? null;
+}
+
 function PriceTile({
   label,
   amount,
@@ -178,11 +253,7 @@ function PriceTile({
   highlight?: boolean;
 }) {
   return (
-    <div
-      className={`rounded-2xl p-4 text-center ${
-        highlight ? "bg-[var(--accent)]/10" : "glass"
-      }`}
-    >
+    <div className={`rounded-2xl p-4 text-center ${highlight ? "bg-[var(--accent)]/10" : "glass"}`}>
       <div className="font-mono text-xl font-bold">
         {amount == null ? "—" : formatMoney(amount, currency)}
       </div>

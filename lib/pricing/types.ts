@@ -23,6 +23,12 @@ export interface IdentifiedCard {
   tcgUrl: string | null;
 }
 
+/** A single search hit: identity plus its raw market price, if any. */
+export interface Candidate extends IdentifiedCard {
+  id: string;
+  raw: { amount: number; currency: string; source: string } | null;
+}
+
 export interface MarketData {
   identified: boolean;
   query: { name: string | null; number: string | null };

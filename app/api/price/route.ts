@@ -4,12 +4,14 @@ import { NextResponse } from "next/server";
  * Card price proxy.
  *
  * Fronts the Pokémon TCG API (api.pokemontcg.io) so the API key stays
- * server-side and responses can be edge-cached. Given a card name (and
- * optional collector number) it returns a normalized identity + raw market
- * price. Graded values are estimated client-side, not here.
+ * server-side and responses can be edge-cached. Returns a ranked list of
+ * candidate cards (identity + raw market price) for a name and optional
+ * collector number; the client picks or lets the user choose. Graded values
+ * are estimated client-side, not here.
  */
 
 const API = "https://api.pokemontcg.io/v2/cards";
+const MAX_RESULTS = 12;
 
 const VARIANT_PRIORITY = [
   "holofoil",
@@ -21,10 +23,11 @@ const VARIANT_PRIORITY = [
 ];
 
 interface TcgCard {
+  id: string;
   name: string;
   number: string;
   rarity?: string;
-  set?: { name?: string };
+  set?: { name?: string; releaseDate?: string };
   images?: { small?: string; large?: string };
   tcgplayer?: { url?: string; prices?: Record<string, { market?: number | null }> };
   cardmarket?: { prices?: { trendPrice?: number; averageSellPrice?: number } };
@@ -33,66 +36,85 @@ interface TcgCard {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const name = searchParams.get("name")?.trim();
-  const number = searchParams.get("number")?.trim();
+  const number = searchParams.get("number")?.trim() || null;
 
   if (!name || name.length < 2) {
-    return NextResponse.json({ identified: false, error: "name required" }, { status: 400 });
+    return NextResponse.json({ results: [], error: "name required" }, { status: 400 });
   }
 
-  const parts = [`name:"${name.replace(/"/g, "")}*"`];
-  if (number) parts.push(`number:${number.replace(/[^A-Za-z0-9]/g, "")}`);
-  const q = parts.join(" ");
+  // Word-AND the name so "charizard ex" matches, wildcarding each token.
+  const nameQuery = name
+    .replace(/[^A-Za-z0-9 '.\-]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => `name:"${w}*"`)
+    .join(" ");
+  const cleanNumber = number?.replace(/[^A-Za-z0-9]/g, "");
+  const q = cleanNumber ? `${nameQuery} number:${cleanNumber}` : nameQuery;
 
   const headers: Record<string, string> = {};
   if (process.env.POKEMON_TCG_API_KEY) headers["X-Api-Key"] = process.env.POKEMON_TCG_API_KEY;
 
-  let cards: TcgCard[];
-  try {
-    const res = await fetch(
-      `${API}?q=${encodeURIComponent(q)}&pageSize=12&orderBy=-set.releaseDate`,
-      { headers, signal: AbortSignal.timeout(9000) }
-    );
-    if (!res.ok) {
-      return NextResponse.json({ identified: false, error: "upstream" }, { status: 502 });
-    }
-    cards = ((await res.json()) as { data?: TcgCard[] }).data ?? [];
-  } catch {
-    return NextResponse.json({ identified: false, error: "upstream" }, { status: 502 });
+  const cards = await search(q, headers);
+  if (cards === null) {
+    return NextResponse.json({ results: [], error: "upstream" }, { status: 502 });
   }
 
-  // Prefer a card that actually has price data, exact number match first.
-  const priced = cards.filter(pickPrice);
-  const chosen =
-    (number && priced.find((c) => c.number === number)) ??
-    priced[0] ??
-    cards[0] ??
-    null;
+  // If a numbered query returned nothing, retry on name alone so the user
+  // still gets candidates to choose from.
+  const pool =
+    cards.length === 0 && cleanNumber ? (await search(nameQuery, headers)) ?? [] : cards;
 
-  if (!chosen) {
-    return NextResponse.json({ identified: false }, { status: 200 });
-  }
+  const results = rank(pool, cleanNumber ?? null).slice(0, MAX_RESULTS).map(toCandidate);
 
-  const price = pickPrice(chosen);
   return NextResponse.json(
-    {
-      identified: true,
-      card: {
-        name: chosen.name,
-        setName: chosen.set?.name ?? "",
-        number: chosen.number,
-        rarity: chosen.rarity ?? null,
-        imageUrl: chosen.images?.large ?? chosen.images?.small ?? null,
-        tcgUrl: chosen.tcgplayer?.url ?? null,
-      },
-      raw: price,
-      source: price?.source ?? null,
-    },
+    { results },
     {
       status: 200,
-      // Prices move slowly; let the CDN cache identical lookups for a day.
       headers: { "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=604800" },
     }
   );
+}
+
+async function search(q: string, headers: Record<string, string>): Promise<TcgCard[] | null> {
+  try {
+    const res = await fetch(
+      `${API}?q=${encodeURIComponent(q)}&pageSize=50&orderBy=-set.releaseDate`,
+      { headers, signal: AbortSignal.timeout(9000) }
+    );
+    if (!res.ok) return null;
+    return ((await res.json()) as { data?: TcgCard[] }).data ?? [];
+  } catch {
+    return null;
+  }
+}
+
+/** Rank: exact number match first, then priced cards, then most recent. */
+function rank(cards: TcgCard[], number: string | null): TcgCard[] {
+  return [...cards].sort((a, b) => {
+    if (number) {
+      const am = a.number === number ? 1 : 0;
+      const bm = b.number === number ? 1 : 0;
+      if (am !== bm) return bm - am;
+    }
+    const ap = pickPrice(a) ? 1 : 0;
+    const bp = pickPrice(b) ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    return (b.set?.releaseDate ?? "").localeCompare(a.set?.releaseDate ?? "");
+  });
+}
+
+function toCandidate(card: TcgCard) {
+  return {
+    id: card.id,
+    name: card.name,
+    setName: card.set?.name ?? "",
+    number: card.number,
+    rarity: card.rarity ?? null,
+    imageUrl: card.images?.large ?? card.images?.small ?? null,
+    tcgUrl: card.tcgplayer?.url ?? null,
+    raw: pickPrice(card),
+  };
 }
 
 /** Extract the best available market price from a card, USD (TCGplayer) first. */

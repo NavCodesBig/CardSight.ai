@@ -3,9 +3,10 @@
  *
  * Reads the name band (top of the card) and the collector-number band (bottom)
  * from the rectified front image using tesseract.js, which runs entirely in the
- * browser. tesseract.js is loaded lazily so its worker + wasm never touch the
- * initial bundle. Output feeds the Pokémon TCG price lookup — best-effort, with
- * a manual-search fallback in the UI when recognition misses.
+ * browser. Crops are grayscaled and contrast-stretched before recognition to
+ * cope with holo/textured backgrounds. tesseract.js is loaded lazily so its
+ * worker + wasm never touch the initial bundle. Output feeds the price lookup —
+ * best-effort, with a manual-search fallback in the UI when recognition misses.
  */
 
 export interface CardText {
@@ -14,8 +15,11 @@ export interface CardText {
 }
 
 // Fractional crop windows on the rectified (portrait) card.
-const NAME_BAND = { x: 0.05, y: 0.03, w: 0.68, h: 0.1 };
-const NUMBER_BAND = { x: 0.02, y: 0.9, w: 0.5, h: 0.085 };
+const NAME_BAND = { x: 0.04, y: 0.02, w: 0.7, h: 0.13 };
+const NUMBER_BAND = { x: 0.0, y: 0.9, w: 0.55, h: 0.095 };
+
+const NAME_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz '.-";
+const NUMBER_CHARS = "0123456789/ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 export async function extractCardText(rectifiedDataUrl: string): Promise<CardText> {
   try {
@@ -24,10 +28,12 @@ export async function extractCardText(rectifiedDataUrl: string): Promise<CardTex
 
     const worker = await createWorker("eng");
     try {
-      // Single-line mode suits the short name / number strips.
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
 
+      await worker.setParameters({ tessedit_char_whitelist: NAME_CHARS });
       const nameRaw = (await worker.recognize(crop(img, NAME_BAND))).data.text;
+
+      await worker.setParameters({ tessedit_char_whitelist: NUMBER_CHARS });
       const numberRaw = (await worker.recognize(crop(img, NUMBER_BAND))).data.text;
 
       return { name: cleanName(nameRaw), number: cleanNumber(numberRaw) };
@@ -40,7 +46,6 @@ export async function extractCardText(rectifiedDataUrl: string): Promise<CardTex
 }
 
 function cleanName(raw: string): string | null {
-  // Keep letters, spaces and a few name characters; drop OCR noise.
   const line = raw.split("\n").map((l) => l.trim()).find((l) => l.length > 1) ?? "";
   const cleaned = line.replace(/[^A-Za-z'.\- ]/g, " ").replace(/\s+/g, " ").trim();
   return cleaned.length >= 2 ? cleaned : null;
@@ -48,7 +53,6 @@ function cleanName(raw: string): string | null {
 
 function cleanNumber(raw: string): string | null {
   const flat = raw.replace(/\s+/g, "");
-  // Prefer the "12/078" collector format; fall back to a standalone number.
   const frac = flat.match(/(\d{1,3})\/(\d{1,3})/);
   if (frac) return frac[1].replace(/^0+(?=\d)/, "");
   const solo = flat.match(/[A-Z]{0,3}\d{1,3}/);
@@ -64,7 +68,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Crop a fractional band and upscale ~2× for cleaner OCR. */
+/** Crop a fractional band, upscale ~3×, grayscale and contrast-stretch. */
 function crop(
   img: HTMLImageElement,
   band: { x: number; y: number; w: number; h: number }
@@ -74,10 +78,28 @@ function crop(
   const sw = img.width * band.w;
   const sh = img.height * band.h;
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(sw * 2);
-  canvas.height = Math.round(sh * 2);
-  const ctx = canvas.getContext("2d")!;
+  canvas.width = Math.round(sw * 3);
+  canvas.height = Math.round(sh * 3);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+  const px = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = px.data;
+  // Grayscale + track range for a contrast stretch.
+  let min = 255;
+  let max = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const g = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+    d[i] = d[i + 1] = d[i + 2] = g;
+    if (g < min) min = g;
+    if (g > max) max = g;
+  }
+  const span = Math.max(1, max - min);
+  for (let i = 0; i < d.length; i += 4) {
+    const v = ((d[i] - min) * 255) / span;
+    d[i] = d[i + 1] = d[i + 2] = v;
+  }
+  ctx.putImageData(px, 0, 0);
   return canvas;
 }

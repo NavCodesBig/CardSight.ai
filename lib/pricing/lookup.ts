@@ -1,71 +1,66 @@
 /**
- * Client-side market lookup: OCR the card, price it, project graded values.
+ * Client-side market lookup: OCR the card, fetch candidates, project graded
+ * values for whichever candidate is chosen.
  *
- * `lookupMarket` is the automatic path (recognize → price). `searchMarket` is
- * the manual fallback used when OCR misses and the user types a name. Both hit
- * the /api/price proxy and layer on estimated graded values.
+ * The API returns a ranked candidate list; the UI auto-selects the best match
+ * but lets the user pick another or search by name when OCR misses.
  */
 
 import { extractCardText } from "../recognition/ocr";
 import { estimateGradedValues } from "./gradedEstimate";
-import type { MarketData } from "./types";
+import type { Candidate, MarketData } from "./types";
 
-interface PriceResponse {
-  identified: boolean;
-  card?: MarketData["card"];
-  raw?: { amount: number; currency: string; source: string } | null;
-  source?: string | null;
+/** OCR the rectified front for a name + collector number. */
+export async function readCardText(
+  rectifiedDataUrl: string
+): Promise<{ name: string | null; number: string | null }> {
+  return extractCardText(rectifiedDataUrl);
 }
 
-/** Automatic: read the card's name/number from the image, then price it. */
-export async function lookupMarket(
-  rectifiedDataUrl: string,
-  likelyPsaGrade: number
-): Promise<MarketData> {
-  const { name, number } = await extractCardText(rectifiedDataUrl);
-  if (!name) {
-    return notIdentified({ name, number });
-  }
-  return fetchAndBuild(name, number, likelyPsaGrade);
-}
-
-/** Manual: price a card by an explicit name (fallback when OCR misses). */
-export async function searchMarket(
+/** Fetch ranked candidate cards for a name (+ optional collector number). */
+export async function fetchCandidates(
   name: string,
-  likelyPsaGrade: number
-): Promise<MarketData> {
-  return fetchAndBuild(name.trim(), null, likelyPsaGrade);
-}
-
-async function fetchAndBuild(
-  name: string,
-  number: string | null,
-  likelyPsaGrade: number
-): Promise<MarketData> {
-  const params = new URLSearchParams({ name });
+  number: string | null
+): Promise<Candidate[]> {
+  const params = new URLSearchParams({ name: name.trim() });
   if (number) params.set("number", number);
-
   const res = await fetch(`/api/price?${params.toString()}`);
-  if (!res.ok) throw new Error(`Price lookup failed (${res.status})`);
-  const data = (await res.json()) as PriceResponse;
+  if (!res.ok && res.status !== 200) throw new Error(`Price lookup failed (${res.status})`);
+  const data = (await res.json()) as { results?: Candidate[] };
+  return data.results ?? [];
+}
 
-  if (!data.identified || !data.card || !data.raw) {
-    return notIdentified({ name, number });
-  }
-
-  const currency = data.raw.currency;
+/** Build the persisted MarketData for a chosen candidate. */
+export function buildMarket(
+  query: { name: string | null; number: string | null },
+  cand: Candidate,
+  likelyPsaGrade: number
+): MarketData {
+  const raw = cand.raw;
   return {
     identified: true,
-    query: { name, number },
-    card: data.card,
-    raw: { label: "Market (raw)", amount: data.raw.amount, currency, estimated: false },
-    graded: estimateGradedValues(data.raw.amount, currency, likelyPsaGrade),
-    source: data.source ?? null,
+    query,
+    card: {
+      name: cand.name,
+      setName: cand.setName,
+      number: cand.number,
+      rarity: cand.rarity,
+      imageUrl: cand.imageUrl,
+      tcgUrl: cand.tcgUrl,
+    },
+    raw: raw
+      ? { label: "Market (raw)", amount: raw.amount, currency: raw.currency, estimated: false }
+      : null,
+    graded: raw ? estimateGradedValues(raw.amount, raw.currency, likelyPsaGrade) : [],
+    source: raw?.source ?? null,
     fetchedAt: new Date().toISOString(),
   };
 }
 
-function notIdentified(query: { name: string | null; number: string | null }): MarketData {
+export function emptyMarket(query: {
+  name: string | null;
+  number: string | null;
+}): MarketData {
   return {
     identified: false,
     query,
