@@ -144,11 +144,43 @@ export function CameraCapture({
   const capture = useCallback(() => {
     const video = videoRef.current;
     if (!video || video.videoWidth === 0) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext("2d")!.drawImage(video, 0, 0);
-    canvas.toBlob(
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+
+    // Grab the exact frame being captured.
+    const full = document.createElement("canvas");
+    full.width = vw;
+    full.height = vh;
+    full.getContext("2d")!.drawImage(video, 0, 0);
+
+    // Detect the card on this frame and crop to it (with margin) so the
+    // analyzed region matches the outline the user framed, instead of the
+    // whole camera frame being re-detected downstream.
+    let sx = 0;
+    let sy = 0;
+    let sw = vw;
+    let sh = vh;
+    try {
+      const s = WORK_WIDTH / vw;
+      const work = document.createElement("canvas");
+      work.width = WORK_WIDTH;
+      work.height = Math.round(vh * s);
+      const wctx = work.getContext("2d", { willReadFrequently: true })!;
+      wctx.drawImage(full, 0, 0, work.width, work.height);
+      const det = detectCard(wctx.getImageData(0, 0, work.width, work.height));
+      if (det.confidence > MIN_CONF) {
+        const box = boundingBox(det.quad, 1 / s, vw, vh);
+        ({ sx, sy, sw, sh } = box);
+      }
+    } catch {
+      // Fall back to the full frame on any detection failure.
+    }
+
+    const out = document.createElement("canvas");
+    out.width = sw;
+    out.height = sh;
+    out.getContext("2d")!.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
+    out.toBlob(
       (blob) => {
         if (!blob) return;
         onCapture(new File([blob], `${label.toLowerCase().replace(/\s+/g, "-")}.jpg`, { type: "image/jpeg" }));
@@ -219,6 +251,31 @@ export function CameraCapture({
       </div>
     </div>
   );
+}
+
+/**
+ * Padded, frame-clamped bounding box of a quad, scaled from work space (×inv)
+ * into full-frame pixels. Margin leaves the card edges some background so the
+ * downstream edge-scan detector can re-lock the same outline.
+ */
+function boundingBox(
+  q: Quad,
+  inv: number,
+  frameW: number,
+  frameH: number
+): { sx: number; sy: number; sw: number; sh: number } {
+  const xs = [q.tl.x, q.tr.x, q.br.x, q.bl.x].map((x) => x * inv);
+  const ys = [q.tl.y, q.tr.y, q.br.y, q.bl.y].map((y) => y * inv);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const pad = 0.08 * Math.max(maxX - minX, maxY - minY);
+  const sx = Math.max(0, Math.floor(minX - pad));
+  const sy = Math.max(0, Math.floor(minY - pad));
+  const sw = Math.min(frameW - sx, Math.ceil(maxX - minX + 2 * pad));
+  const sh = Math.min(frameH - sy, Math.ceil(maxY - minY + 2 * pad));
+  return { sx, sy, sw, sh };
 }
 
 /** Shoelace area of a quad (in its own coordinate space). */
