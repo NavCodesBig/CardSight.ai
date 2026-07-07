@@ -2,13 +2,30 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { detectCard } from "@/lib/vision/cardDetector";
+import type { Quad } from "@/lib/vision/types";
 
-type DetectState = "searching" | "found" | "unavailable";
+type DetectState = "searching" | "far" | "close" | "found" | "unavailable";
+
+const DETECT_INTERVAL_MS = 140; // run detection ~7×/sec
+const WORK_WIDTH = 380; // downscaled analysis width
+const SMOOTH = 0.4; // per-frame lerp toward the newest detection (0..1)
+const MIN_CONF = 0.5;
+const NEAR_COVERAGE = 0.3; // below → "move closer"
+const FAR_COVERAGE = 0.9; // above → "move back"
+
+const STATUS: Record<DetectState, { text: string; tone: "ok" | "warn" | "idle" }> = {
+  found: { text: "✓ Card locked — hold steady", tone: "ok" },
+  far: { text: "Move closer — fill the frame", tone: "warn" },
+  close: { text: "Move back a little", tone: "warn" },
+  searching: { text: "Align the card within the frame", tone: "idle" },
+  unavailable: { text: "", tone: "idle" },
+};
 
 /**
  * Live camera capture modal with real-time card outline detection.
- * A downscaled frame is analyzed ~2×/sec; the detected quad is drawn over
- * the video feed so the user knows the card is locked before capturing.
+ * A downscaled frame is analyzed several times a second; the detected quad is
+ * temporally smoothed and drawn over the video so the outline tracks the card
+ * without jitter, and coverage-based hints guide framing before capture.
  */
 export function CameraCapture({
   label,
@@ -58,49 +75,70 @@ export function CameraCapture({
     };
   }, []);
 
-  // Detection loop on downscaled frames
+  // Detection + smoothed drawing loop
   useEffect(() => {
     if (!ready) return;
     const video = videoRef.current!;
     const overlay = overlayRef.current!;
     const work = document.createElement("canvas");
     const wctx = work.getContext("2d", { willReadFrequently: true })!;
-    let stopped = false;
 
-    const loop = () => {
-      if (stopped || video.videoWidth === 0) return;
-      const scale = 380 / video.videoWidth;
-      work.width = 380;
-      work.height = Math.round(video.videoHeight * scale);
-      wctx.drawImage(video, 0, 0, work.width, work.height);
-      const det = detectCard(wctx.getImageData(0, 0, work.width, work.height));
+    let raf = 0;
+    let lastDetect = 0;
+    let scale = 1;
+    let target: Quad | null = null; // newest detection, in work-canvas space
+    let smooth: Quad | null = null; // lerped quad drawn to screen
+    let lostFrames = 0;
+    let stateRef: DetectState = "searching";
 
-      overlay.width = video.videoWidth;
-      overlay.height = video.videoHeight;
-      const octx = overlay.getContext("2d")!;
-      octx.clearRect(0, 0, overlay.width, overlay.height);
-
-      if (det.confidence > 0.55) {
-        setDetect("found");
-        const inv = 1 / scale;
-        octx.strokeStyle = "#34d399";
-        octx.lineWidth = Math.max(3, overlay.width * 0.005);
-        octx.setLineDash([18, 10]);
-        octx.beginPath();
-        const q = det.quad;
-        octx.moveTo(q.tl.x * inv, q.tl.y * inv);
-        for (const p of [q.tr, q.br, q.bl, q.tl]) octx.lineTo(p.x * inv, p.y * inv);
-        octx.stroke();
-      } else {
-        setDetect("searching");
+    const setState = (s: DetectState) => {
+      if (s !== stateRef) {
+        stateRef = s;
+        setDetect(s);
       }
     };
 
-    const id = setInterval(loop, 450);
-    return () => {
-      stopped = true;
-      clearInterval(id);
+    const step = (t: number) => {
+      raf = requestAnimationFrame(step);
+      if (video.videoWidth === 0) return;
+
+      // Size the overlay once to the video's pixel dimensions.
+      if (overlay.width !== video.videoWidth) {
+        overlay.width = video.videoWidth;
+        overlay.height = video.videoHeight;
+        scale = WORK_WIDTH / video.videoWidth;
+        work.width = WORK_WIDTH;
+        work.height = Math.round(video.videoHeight * scale);
+      }
+
+      if (t - lastDetect > DETECT_INTERVAL_MS) {
+        lastDetect = t;
+        wctx.drawImage(video, 0, 0, work.width, work.height);
+        const det = detectCard(wctx.getImageData(0, 0, work.width, work.height));
+        const cov = quadArea(det.quad) / (work.width * work.height);
+
+        if (det.confidence > MIN_CONF && cov > 0.1) {
+          target = det.quad;
+          lostFrames = 0;
+          setState(cov < NEAR_COVERAGE ? "far" : cov > FAR_COVERAGE ? "close" : "found");
+        } else if (++lostFrames > 4) {
+          target = null;
+          setState("searching");
+        }
+      }
+
+      const octx = overlay.getContext("2d")!;
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+      if (!target) {
+        smooth = null;
+        return;
+      }
+      smooth = smooth ? lerpQuad(smooth, target, SMOOTH) : target;
+      drawQuad(octx, smooth, 1 / scale, overlay.width, stateRef === "found");
     };
+
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
   }, [ready]);
 
   const capture = useCallback(() => {
@@ -120,6 +158,8 @@ export function CameraCapture({
       0.92
     );
   }, [label, onCapture, onClose]);
+
+  const status = STATUS[detect];
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4 backdrop-blur-md">
@@ -149,14 +189,14 @@ export function CameraCapture({
               <canvas ref={overlayRef} className="absolute inset-0 h-full w-full object-contain" />
               <div
                 className={`absolute inset-x-0 top-3 mx-auto w-fit rounded-full px-4 py-1.5 text-xs font-semibold backdrop-blur ${
-                  detect === "found"
+                  status.tone === "ok"
                     ? "bg-emerald-500/25 text-emerald-300"
-                    : "bg-black/45 text-white/85"
+                    : status.tone === "warn"
+                      ? "bg-amber-500/25 text-amber-200"
+                      : "bg-black/45 text-white/85"
                 }`}
               >
-                {detect === "found"
-                  ? "✓ Card detected — hold steady"
-                  : "Align the card within the frame"}
+                {status.text}
               </div>
             </div>
 
@@ -179,4 +219,43 @@ export function CameraCapture({
       </div>
     </div>
   );
+}
+
+/** Shoelace area of a quad (in its own coordinate space). */
+function quadArea(q: Quad): number {
+  const p = [q.tl, q.tr, q.br, q.bl];
+  let a = 0;
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    a += p[i].x * p[j].y - p[j].x * p[i].y;
+  }
+  return Math.abs(a) / 2;
+}
+
+function lerpQuad(a: Quad, b: Quad, f: number): Quad {
+  const mix = (p: { x: number; y: number }, q: { x: number; y: number }) => ({
+    x: p.x + (q.x - p.x) * f,
+    y: p.y + (q.y - p.y) * f,
+  });
+  return { tl: mix(a.tl, b.tl), tr: mix(a.tr, b.tr), br: mix(a.br, b.br), bl: mix(a.bl, b.bl) };
+}
+
+function drawQuad(
+  ctx: CanvasRenderingContext2D,
+  q: Quad,
+  inv: number,
+  width: number,
+  locked: boolean
+): void {
+  ctx.strokeStyle = locked ? "#34d399" : "#fbbf24";
+  ctx.lineWidth = Math.max(3, width * 0.005);
+  ctx.lineJoin = "round";
+  ctx.setLineDash(locked ? [] : [18, 10]);
+  ctx.shadowColor = ctx.strokeStyle;
+  ctx.shadowBlur = locked ? width * 0.012 : 0;
+  ctx.beginPath();
+  ctx.moveTo(q.tl.x * inv, q.tl.y * inv);
+  for (const p of [q.tr, q.br, q.bl, q.tl]) ctx.lineTo(p.x * inv, p.y * inv);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
 }

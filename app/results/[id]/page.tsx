@@ -15,6 +15,7 @@ import { CenteringViz } from "@/components/results/CenteringViz";
 import { MeasurementOverlay } from "@/components/results/MeasurementOverlay";
 import { DamageMap } from "@/components/results/DamageMap";
 import { CompanyEstimates } from "@/components/results/CompanyEstimates";
+import { MarketValue } from "@/components/results/MarketValue";
 
 const SUBGRADE_META: Record<SubgradeKey, { label: string; icon: string }> = {
   centering: { label: "Centering", icon: "🎯" },
@@ -129,6 +130,9 @@ export default function ResultsPage() {
           <p className="mt-1.5 text-sm text-muted">{scan.submission.detail}</p>
         </GlassCard>
       </section>
+
+      {/* Market value */}
+      <MarketValue scan={scan} />
 
       {/* Face inspector */}
       <section>

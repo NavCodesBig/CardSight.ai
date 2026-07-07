@@ -23,6 +23,7 @@ import {
 import { explainGrade, type Explanation } from "./grading/explain";
 import { identifyCard, type CardInfo } from "./recognition/identifier";
 import type { FaceAnalysis } from "./vision/types";
+import type { MarketData } from "./pricing/types";
 
 export interface ScanResult {
   id: string;
@@ -36,6 +37,8 @@ export interface ScanResult {
   cardInfo: CardInfo;
   detectionConfidence: number;
   favorite: boolean;
+  /** Market value, filled in lazily on the results page (needs network). */
+  market?: MarketData | null;
 }
 
 export type ProgressStage =

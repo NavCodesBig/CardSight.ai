@@ -7,6 +7,7 @@
  */
 
 import type { ScanResult } from "./analyze";
+import type { MarketData } from "./pricing/types";
 
 const INDEX_KEY = "cardsight.scans.index";
 const SCAN_PREFIX = "cardsight.scan.";
@@ -97,6 +98,20 @@ export async function toggleFavorite(id: string): Promise<boolean> {
     localStorage.setItem(SCAN_PREFIX + id, JSON.stringify(scan));
   }
   return entry.favorite;
+}
+
+/** Persist looked-up market value onto an already-saved scan. */
+export async function updateScanMarket(id: string, market: MarketData): Promise<void> {
+  if (typeof window === "undefined") return;
+  const raw = localStorage.getItem(SCAN_PREFIX + id);
+  if (!raw) return;
+  try {
+    const scan = JSON.parse(raw) as ScanResult;
+    scan.market = market;
+    localStorage.setItem(SCAN_PREFIX + id, JSON.stringify(scan));
+  } catch {
+    // Non-fatal: market value is a cache; it can be re-fetched on next view.
+  }
 }
 
 export async function deleteScan(id: string): Promise<void> {
