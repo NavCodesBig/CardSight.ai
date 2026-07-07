@@ -9,6 +9,8 @@
  * best-effort, with a manual-search fallback in the UI when recognition misses.
  */
 
+import { snapToName } from "./nameMatch";
+
 export interface CardText {
   name: string | null;
   number: string | null;
@@ -36,7 +38,8 @@ export async function extractCardText(rectifiedDataUrl: string): Promise<CardTex
       await worker.setParameters({ tessedit_char_whitelist: NUMBER_CHARS });
       const numberRaw = (await worker.recognize(crop(img, NUMBER_BAND))).data.text;
 
-      return { name: cleanName(nameRaw), number: cleanNumber(numberRaw) };
+      // Snap the raw name to the nearest real Pokémon card name.
+      return { name: snapToName(cleanName(nameRaw)), number: cleanNumber(numberRaw) };
     } finally {
       await worker.terminate();
     }
