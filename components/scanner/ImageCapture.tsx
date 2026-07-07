@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { CameraCapture } from "./CameraCapture";
+import { CornerAdjust } from "./CornerAdjust";
 import type { Quad } from "@/lib/vision/types";
 
 /* Static capability check, hydration-safe: server snapshot says no camera,
@@ -24,24 +25,37 @@ export function ImageCapture({
   const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [adjust, setAdjust] = useState<{ file: File; url: string; quad?: Quad } | null>(null);
   const hasCamera = useSyncExternalStore(
     noopSubscribe,
     hasCameraSnapshot,
     noCameraSnapshot
   );
 
-  const handle = useCallback(
-    (f: File | undefined, quad?: Quad) => {
-      if (!f || !f.type.startsWith("image/")) return;
-      onSelect(f, quad);
-      const url = URL.createObjectURL(f);
+  // A capture (camera, file or drop) opens the corner-adjust step; only after
+  // the user confirms the corners does the file get committed.
+  const handle = useCallback((f: File | undefined, quad?: Quad) => {
+    if (!f || !f.type.startsWith("image/")) return;
+    setAdjust({ file: f, url: URL.createObjectURL(f), quad });
+  }, []);
+
+  const confirmAdjust = useCallback(
+    (finalQuad: Quad) => {
+      if (!adjust) return;
+      onSelect(adjust.file, finalQuad);
       setPreview((old) => {
         if (old) URL.revokeObjectURL(old);
-        return url;
+        return adjust.url;
       });
+      setAdjust(null);
     },
-    [onSelect]
+    [adjust, onSelect]
   );
+
+  const cancelAdjust = useCallback(() => {
+    if (adjust) URL.revokeObjectURL(adjust.url);
+    setAdjust(null);
+  }, [adjust]);
 
   return (
     <div className="relative w-full max-w-xs">
@@ -126,6 +140,15 @@ export function ImageCapture({
           label={label}
           onCapture={handle}
           onClose={() => setCameraOpen(false)}
+        />
+      )}
+
+      {adjust && (
+        <CornerAdjust
+          imageUrl={adjust.url}
+          initialQuad={adjust.quad}
+          onConfirm={confirmAdjust}
+          onCancel={cancelAdjust}
         />
       )}
     </div>
