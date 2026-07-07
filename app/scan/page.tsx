@@ -42,8 +42,16 @@ export default function ScanPage() {
         setPct(p);
       });
       const quality = [...result.front.quality.warnings, ...result.back.quality.warnings];
-      if (!result.front.quality.usable || !result.back.quality.usable) {
-        setWarnings(quality);
+      const detectionWeak = result.detectionConfidence < 0.5;
+      if (detectionWeak || !result.front.quality.usable || !result.back.quality.usable) {
+        setWarnings(
+          detectionWeak
+            ? [
+                "Couldn't reliably detect the card outline, so the grade would be unreliable. Lay the card flat, fill the frame, and use a plain, contrasting background.",
+                ...quality,
+              ]
+            : quality
+        );
         setProcessing(false);
         return;
       }

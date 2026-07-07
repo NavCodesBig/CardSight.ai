@@ -30,6 +30,7 @@ export function MarketValue({ scan }: { scan: ScanResult }) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [status, setStatus] = useState<Status>(scan.market ? "ready" : "loading");
   const [query, setQuery] = useState(scan.market?.query.name ?? "");
+  const [numberQuery, setNumberQuery] = useState(scan.market?.query.number ?? "");
 
   const choose = useCallback(
     async (
@@ -53,6 +54,7 @@ export function MarketValue({ scan }: { scan: ScanResult }) {
         const { name, number } = await readCardText(scan.front.rectifiedDataUrl);
         if (!alive) return;
         if (name) setQuery(name);
+        if (number) setNumberQuery(number);
         const list = name ? await fetchCandidates(name, number) : [];
         if (!alive) return;
         setCandidates(list);
@@ -71,11 +73,12 @@ export function MarketValue({ scan }: { scan: ScanResult }) {
     e.preventDefault();
     const name = query.trim();
     if (name.length < 2) return;
+    const number = numberQuery.trim() || null;
     setStatus("loading");
     try {
-      const list = await fetchCandidates(name, null);
+      const list = await fetchCandidates(name, number);
       setCandidates(list);
-      await choose({ name, number: null }, list[0] ?? null);
+      await choose({ name, number }, list[0] ?? null);
     } catch {
       setStatus("error");
     }
@@ -209,21 +212,34 @@ export function MarketValue({ scan }: { scan: ScanResult }) {
             {/* Search — always available */}
             <form
               onSubmit={runSearch}
-              className="mt-5 flex gap-2 border-t border-[var(--card-border)] pt-4"
+              className="mt-5 border-t border-[var(--card-border)] pt-4"
             >
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by card name (e.g. Charizard)"
-                className="flex-1 rounded-xl border border-[var(--card-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
-              />
-              <button
-                type="submit"
-                className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-                disabled={query.trim().length < 2}
-              >
-                Search
-              </button>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Card name (e.g. Charizard)"
+                  className="flex-1 rounded-xl border border-[var(--card-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+                />
+                <input
+                  value={numberQuery}
+                  onChange={(e) => setNumberQuery(e.target.value)}
+                  placeholder="No. (e.g. 3)"
+                  inputMode="numeric"
+                  className="rounded-xl border border-[var(--card-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--accent)] sm:w-28"
+                />
+                <button
+                  type="submit"
+                  className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                  disabled={query.trim().length < 2}
+                >
+                  Search
+                </button>
+              </div>
+              <p className="mt-1.5 text-xs text-muted">
+                Tip: the collector number (e.g. 3/102) is on the card&apos;s bottom-left —
+                adding it finds the exact card.
+              </p>
             </form>
           </>
         )}

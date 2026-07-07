@@ -53,8 +53,11 @@ class HeuristicIdentifier implements CardIdentifier {
     // Holo detection: high color variance in the art window suggests foil.
     const artVar = regionColorVariance(front, 0.12, 0.12, 0.76, 0.42);
     const fullVar = regionColorVariance(front, 0.08, 0.55, 0.84, 0.38);
+    // Full-art cards are borderless — a detected yellow/silver frame rules it
+    // out, so a bordered holo is classified as "holo", never "full-art".
+    const hasFrame = yellowFrame || silverFrame;
     const holoType: CardInfo["holoType"] =
-      artVar > 2600 && fullVar > 2200
+      !hasFrame && artVar > 3200 && fullVar > 2800
         ? "full-art"
         : artVar > 2600
           ? "holo"

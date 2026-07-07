@@ -106,6 +106,11 @@ export async function analyzeCard(
   onProgress("grading", 92);
   await tick();
   const grade = computeGrade(frontFace, backFace);
+  // Honesty gate: a weak card detection means the rectified faces — and every
+  // measurement taken from them — are unreliable, so damp the reported grade
+  // confidence to match how well the card was actually located.
+  const avgDet = (frontDet.confidence + backDet.confidence) / 2;
+  grade.confidence = Math.round(grade.confidence * Math.min(1, avgDet / 0.75) * 100) / 100;
   const companyEstimates = estimateCompanyGrades(grade.overall, grade.confidence);
   const submission = submissionRecommendation(grade.overall, grade.confidence);
   const explanations = explainGrade(frontFace, backFace, grade);
