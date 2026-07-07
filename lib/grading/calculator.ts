@@ -1,10 +1,15 @@
 /**
- * Grade calculation.
+ * Grade calculation — DCM-aligned methodology.
  *
- * Combines front + back face analyses into four subgrades, then an overall
- * grade. Mirrors how professional graders think: the overall is a weighted
- * blend of the subgrades, but it can never float far above the weakest
- * category — one crushed corner caps the card no matter how clean the rest is.
+ * Combines front + back face analyses into four subgrades then an overall
+ * grade, following the rules DCM Grading publishes:
+ *   • Front is weighted 55%, back 45% (front is the primary display side).
+ *   • The final grade can never exceed the lowest component subgrade
+ *     (weakest-link rule, matching PSA/BGS/SGC).
+ *   • Structural damage (crushed corners, deep dents/creases) triggers an
+ *     automatic cap regardless of how clean the rest of the card is.
+ * Subgrades themselves are produced by three-pass consensus upstream
+ * (see analyze.ts), so a defect must appear in ≥2 passes to count.
  */
 
 import type { FaceAnalysis } from "../vision/types";
@@ -19,15 +24,19 @@ export interface Subgrades {
 
 export interface GradeResult {
   subgrades: Subgrades;
+  /** Weighted composite before the weakest-link / structural caps. */
+  composite: number;
   overall: number;
   /** 0..1 — how much the model trusts this estimate. */
   confidence: number;
   /** Which category limited the grade. */
   limitingFactor: SubgradeKey;
+  /** Set when structural damage forced an automatic cap. */
+  structuralCap: number | null;
 }
 
-/** Front face dominates, matching PSA/BGS practice (back counts ~1/3). */
-const FRONT_WEIGHT = 0.72;
+/** DCM front/back weighting: front 55%, back 45%. */
+const FRONT_WEIGHT = 0.55;
 
 export function computeGrade(front: FaceAnalysis, back: FaceAnalysis): GradeResult {
   const blend = (f: number, b: number) => FRONT_WEIGHT * f + (1 - FRONT_WEIGHT) * b;
@@ -43,22 +52,28 @@ export function computeGrade(front: FaceAnalysis, back: FaceAnalysis): GradeResu
     surface: roundHalf(blend(front.surface.score, back.surface.score)),
   };
 
-  const weighted =
+  const composite = roundHalf(
     subgrades.centering * SUBGRADE_WEIGHTS.centering +
-    subgrades.corners * SUBGRADE_WEIGHTS.corners +
-    subgrades.edges * SUBGRADE_WEIGHTS.edges +
-    subgrades.surface * SUBGRADE_WEIGHTS.surface;
+      subgrades.corners * SUBGRADE_WEIGHTS.corners +
+      subgrades.edges * SUBGRADE_WEIGHTS.edges +
+      subgrades.surface * SUBGRADE_WEIGHTS.surface
+  );
 
   const entries = Object.entries(subgrades) as [SubgradeKey, number][];
   const [limitingFactor, minSub] = entries.reduce((a, b) => (b[1] < a[1] ? b : a));
 
-  // Overall cannot exceed the weakest subgrade by more than 1.5 points,
-  // and a Gem Mint 10 requires every subgrade at 9.5+.
-  let overall = Math.min(weighted, minSub + 1.5);
-  if (overall >= 10 && minSub < 9.5) overall = 9.5;
+  // Weakest-link: the final grade cannot exceed the lowest subgrade.
+  let overall = Math.min(composite, minSub);
+
+  // Structural-damage auto-cap. Thresholds are deliberately high so ordinary
+  // wear never trips them — only clearly severe damage caps the grade.
+  const structuralCap = structuralDamageCap(front, back);
+  if (structuralCap !== null) overall = Math.min(overall, structuralCap);
+
   overall = roundHalf(Math.max(1, overall));
 
-  // Confidence: driven by image quality and detection reliability.
+  // Confidence: driven by image quality (detection reliability is folded in
+  // separately by the pipeline).
   const q = (f: FaceAnalysis) => {
     let c = 1;
     if (f.quality.blurry) c -= 0.3;
@@ -69,7 +84,32 @@ export function computeGrade(front: FaceAnalysis, back: FaceAnalysis): GradeResu
   };
   const confidence = Math.round(((q(front) + q(back)) / 2) * 0.92 * 100) / 100;
 
-  return { subgrades, overall, confidence, limitingFactor };
+  return {
+    subgrades,
+    composite,
+    overall,
+    confidence,
+    limitingFactor,
+    structuralCap,
+  };
+}
+
+/**
+ * Detect structural damage that should hard-cap the grade. Conservative on
+ * purpose — a crushed/rounded corner or a deep dent/crease, not light wear.
+ */
+function structuralDamageCap(front: FaceAnalysis, back: FaceAnalysis): number | null {
+  const corners = [...front.corners, ...back.corners];
+  const worstWhitening = Math.max(...corners.map((c) => c.whitening), 0);
+  const worstSharpLoss = Math.max(...corners.map((c) => 1 - c.sharpnessScore), 0);
+  const defects = [...front.surface.defects, ...back.surface.defects];
+  const worstDefect = Math.max(...defects.map((d) => d.severity), 0);
+
+  // Crushed / lifted corner: heavy whitening plus lost sharpness.
+  if (worstWhitening > 0.65 && worstSharpLoss > 0.6) return 5;
+  // Deep dent / crease / gouge on the surface.
+  if (worstDefect >= 0.9) return 4;
+  return null;
 }
 
 function avg(v: number[]): number {

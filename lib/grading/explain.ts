@@ -98,10 +98,18 @@ export function explainGrade(
   {
     const label = gradeLabel(result.overall);
     const points: string[] = [
-      `The overall ${result.overall} (${label.label}) is a weighted blend — centering 25%, corners 25%, edges 20%, surface 30% — capped so it can never exceed the weakest category by more than 1.5 points.`,
-      `Limiting factor: ${result.limitingFactor} (${result.subgrades[result.limitingFactor]}).`,
-      `Analysis confidence ${Math.round(result.confidence * 100)}%. This is an AI pre-grade estimate from photos, not a substitute for in-hand professional grading.`,
+      `Front and back are weighted 55% / 45%. Each face's subgrades blend centering 25%, corners 25%, edges 20%, surface 30% into a composite of ${result.composite}.`,
+      `Weakest-link rule: the final grade cannot exceed the lowest subgrade, so ${result.limitingFactor} (${result.subgrades[result.limitingFactor]}) sets the ceiling here — final ${result.overall} (${label.label}).`,
     ];
+    if (result.structuralCap !== null) {
+      points.push(
+        `Structural damage detected — the grade is automatically capped at ${result.structuralCap} regardless of the other categories.`
+      );
+    }
+    points.push(
+      "Every subgrade is scored by three-pass consensus: the analysis runs three independent times and a defect must appear in at least two passes to count, which keeps false positives out.",
+      `Analysis confidence ${Math.round(result.confidence * 100)}%. This is an AI pre-grade estimate from photos, not a substitute for in-hand professional grading.`
+    );
     out.push({ category: "overall", title: `Overall — ${result.overall}`, points });
   }
 

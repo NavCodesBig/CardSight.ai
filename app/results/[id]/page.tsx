@@ -16,6 +16,7 @@ import { MeasurementOverlay } from "@/components/results/MeasurementOverlay";
 import { DamageMap } from "@/components/results/DamageMap";
 import { CompanyEstimates } from "@/components/results/CompanyEstimates";
 import { MarketValue } from "@/components/results/MarketValue";
+import { DefectCatalog } from "@/components/results/DefectCatalog";
 
 const SUBGRADE_META: Record<SubgradeKey, { label: string; icon: string }> = {
   centering: { label: "Centering", icon: "🎯" },
@@ -79,6 +80,7 @@ export default function ResultsPage() {
           <div className="flex-1 text-center lg:text-left">
             <div className="flex flex-wrap items-center justify-center gap-2 lg:justify-start">
               <Badge tone="accent">AI pre-grade estimate</Badge>
+              <Badge>DCM-aligned · 3-pass</Badge>
               {scan.cardInfo.eraGuess && <Badge>{scan.cardInfo.eraGuess}</Badge>}
               {scan.cardInfo.holoType !== "none" && (
                 <Badge tone="good">{scan.cardInfo.holoType}</Badge>
@@ -94,6 +96,15 @@ export default function ResultsPage() {
                 <div className="mt-1 text-sm text-muted">
                   Limited by {SUBGRADE_META[scan.grade.limitingFactor].label.toLowerCase()}
                 </div>
+                <div className="mt-0.5 text-xs text-muted">
+                  Composite {scan.grade.composite ?? scan.grade.overall} · weakest-link final{" "}
+                  {scan.grade.overall}
+                </div>
+                {scan.grade.structuralCap != null && (
+                  <div className="mt-1 text-xs font-semibold text-rose-400">
+                    ⚠ Structural damage — grade capped at {scan.grade.structuralCap}
+                  </div>
+                )}
                 <div className="mx-auto mt-4 w-52 sm:mx-0">
                   <ConfidenceMeter value={scan.grade.confidence} />
                 </div>
@@ -209,6 +220,9 @@ export default function ResultsPage() {
           </GlassCard>
         </div>
       </section>
+
+      {/* Defect report */}
+      <DefectCatalog scan={scan} />
 
       {/* Explanations */}
       <section>
