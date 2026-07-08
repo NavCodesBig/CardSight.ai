@@ -44,3 +44,5 @@ uploads/*
 datasets/raw
 datasets/rectified
 datasets/masks
+datasets/cardref/*
+!datasets/cardref/README.md
