@@ -9,7 +9,12 @@
  * best-effort, with a manual-search fallback in the UI when recognition misses.
  */
 
-import { snapToName } from "./nameMatch";
+import { snapScored, snapJapanese } from "./nameMatch";
+
+// Below this English match confidence, retry the name in Japanese — the card
+// is likely a Japanese-language print. Gated so the heavier jpn model only
+// downloads when an English read genuinely fails.
+const JP_FALLBACK_BELOW = 0.6;
 
 export interface CardText {
   name: string | null;
@@ -28,23 +33,56 @@ export async function extractCardText(rectifiedDataUrl: string): Promise<CardTex
     const { createWorker, PSM } = await import("tesseract.js");
     const img = await loadImage(rectifiedDataUrl);
 
+    const nameCrop = crop(img, NAME_BAND);
     const worker = await createWorker("eng");
+    let numberRaw = "";
+    let match: ReturnType<typeof snapScored> = null;
     try {
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
 
       await worker.setParameters({ tessedit_char_whitelist: NAME_CHARS });
-      const nameRaw = (await worker.recognize(crop(img, NAME_BAND))).data.text;
+      const nameRaw = (await worker.recognize(nameCrop)).data.text;
 
       await worker.setParameters({ tessedit_char_whitelist: NUMBER_CHARS });
-      const numberRaw = (await worker.recognize(crop(img, NUMBER_BAND))).data.text;
+      numberRaw = (await worker.recognize(crop(img, NUMBER_BAND))).data.text;
 
-      // Snap the raw name to the nearest real Pokémon card name.
-      return { name: snapToName(cleanName(nameRaw)), number: cleanNumber(numberRaw) };
+      // Snap the English read to the nearest real card name.
+      match = snapScored(cleanName(nameRaw));
+    } finally {
+      await worker.terminate();
+    }
+
+    // Weak English read → try Japanese (katakana) and keep the better match.
+    if (!match || match.sim < JP_FALLBACK_BELOW) {
+      const jp = await recognizeJapanese(createWorker, PSM, nameCrop);
+      if (jp && (!match || jp.sim > match.sim)) match = jp;
+    }
+
+    return { name: match?.display ?? null, number: cleanNumber(numberRaw) };
+  } catch {
+    return { name: null, number: null };
+  }
+}
+
+type Tesseract = typeof import("tesseract.js");
+
+/** OCR the name band in Japanese and snap it to an English card name. */
+async function recognizeJapanese(
+  createWorker: Tesseract["createWorker"],
+  PSM: Tesseract["PSM"],
+  nameCrop: HTMLCanvasElement
+): Promise<ReturnType<typeof snapJapanese>> {
+  try {
+    const worker = await createWorker("jpn");
+    try {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
+      const raw = (await worker.recognize(nameCrop)).data.text;
+      return snapJapanese(raw);
     } finally {
       await worker.terminate();
     }
   } catch {
-    return { name: null, number: null };
+    return null;
   }
 }
 

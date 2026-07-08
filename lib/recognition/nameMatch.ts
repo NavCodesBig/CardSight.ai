@@ -13,9 +13,15 @@
 
 import SPECIES_JSON from "./pokemonNames.json";
 import TRAINER_JSON from "./trainerNames.json";
+import JA_JSON from "./pokemonNamesJa.json";
 
 const SPECIES_NORM = (SPECIES_JSON as string[]).map((n) => ({ display: n, norm: normalize(n) }));
 const TRAINER_NORM = (TRAINER_JSON as string[]).map((n) => ({ display: n, norm: normalize(n) }));
+// Japanese (katakana) → English display, for OCR of Japanese-language cards.
+const JA_NORM = (JA_JSON as { ja: string; en: string }[]).map((p) => ({
+  display: p.en,
+  norm: normalizeJa(p.ja),
+}));
 
 const ACCEPT = 0.62; // minimum similarity to trust a match
 
@@ -63,6 +69,15 @@ interface Match {
 
 /** Correct an OCR'd name to the nearest real card name, or null if hopeless. */
 export function snapToName(raw: string | null): string | null {
+  return snapScored(raw)?.display ?? null;
+}
+
+/**
+ * Like snapToName but returns the match with its similarity, so callers (e.g.
+ * the Japanese OCR pass) can compare confidences across scripts. Always returns
+ * the tidied Pokémon-path fallback when nothing clears the accept threshold.
+ */
+export function snapScored(raw: string | null): Match | null {
   if (!raw) return null;
   const cleaned = raw.trim();
   if (cleaned.length < 2) return null;
@@ -70,12 +85,20 @@ export function snapToName(raw: string | null): string | null {
   const pokemon = speciesPath(cleaned);
   const trainer = fuzzyList(cleaned, TRAINER_NORM);
 
-  const candidates = [pokemon, trainer].filter((m): m is Match => m !== null && m.sim >= ACCEPT);
-  if (candidates.length > 0) {
-    return candidates.sort((a, b) => b.sim - a.sim)[0].display;
-  }
-  // Nothing confident — return a tidied version of what was read.
-  return pokemon?.display ?? titleCase(cleaned);
+  const accepted = [pokemon, trainer]
+    .filter((m): m is Match => m !== null && m.sim >= ACCEPT)
+    .sort((a, b) => b.sim - a.sim);
+  if (accepted.length > 0) return accepted[0];
+  return pokemon; // tidied fallback (low sim)
+}
+
+/** Match Japanese (katakana) OCR text to the English card name. */
+export function snapJapanese(raw: string | null): Match | null {
+  if (!raw) return null;
+  const b = normalizeJa(raw);
+  if (b.length < 2) return null;
+  const m = fuzzyNorm(b, JA_NORM);
+  return m && m.sim >= 0.6 ? m : null;
 }
 
 /** Pokémon path: split off modifiers, fuzzy-match the base species. */
@@ -109,9 +132,13 @@ function speciesPath(raw: string): Match | null {
   return { display, sim: species?.sim ?? 0 };
 }
 
-/** Best match of a whole string against a normalized dictionary. */
+/** Best match of a whole string against a Latin-normalized dictionary. */
 function fuzzyList(s: string, list: { display: string; norm: string }[]): Match | null {
-  const b = normalize(s);
+  return fuzzyNorm(normalize(s), list);
+}
+
+/** Best match of an already-normalized key against a normalized dictionary. */
+function fuzzyNorm(b: string, list: { display: string; norm: string }[]): Match | null {
   if (b.length < 2) return null;
   let best: string | null = null;
   let bestSim = 0;
@@ -133,6 +160,22 @@ function nearestModifier(token: string, keys: string[]): string | null {
     if (k.length > 2 && levenshtein(token, k) <= 1) return k;
   }
   return null;
+}
+
+/**
+ * Normalize Japanese OCR text for matching: convert hiragana to katakana and
+ * keep only katakana + kanji (drops spaces, the ・ separator, latin and digits).
+ */
+function normalizeJa(s: string): string {
+  let out = "";
+  for (const ch of s) {
+    const c = ch.codePointAt(0)!;
+    const k = c >= 0x3041 && c <= 0x3096 ? c + 0x60 : c; // hiragana → katakana
+    if ((k >= 0x30a0 && k <= 0x30ff) || (k >= 0x4e00 && k <= 0x9fff)) {
+      out += String.fromCodePoint(k);
+    }
+  }
+  return out;
 }
 
 function normalize(s: string): string {
