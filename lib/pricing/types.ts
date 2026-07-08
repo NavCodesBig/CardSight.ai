@@ -19,6 +19,10 @@ export interface IdentifiedCard {
   setName: string;
   number: string;
   rarity: string | null;
+  /** "Pokémon" | "Trainer" | "Energy". */
+  supertype: string | null;
+  /** e.g. ["Basic"], ["Stage 2"], ["V"], ["VMAX"], ["ex"], ["Supporter"]. */
+  subtypes: string[];
   imageUrl: string | null;
   tcgUrl: string | null;
 }

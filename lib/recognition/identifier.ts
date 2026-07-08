@@ -51,19 +51,13 @@ class HeuristicIdentifier implements CardIdentifier {
     const silverFrame = Math.abs(r - g) < 20 && Math.abs(g - b) < 20 && r > 130;
 
     // Holo detection: high color variance in the art window suggests foil.
+    // "Full-art" can't be told apart reliably from a photo (it was mislabeling
+    // ordinary cards), so we only distinguish holo / reverse-holo / none here
+    // and rely on the Pokémon TCG API for the card's real type/rarity.
     const artVar = regionColorVariance(front, 0.12, 0.12, 0.76, 0.42);
     const fullVar = regionColorVariance(front, 0.08, 0.55, 0.84, 0.38);
-    // Full-art cards are borderless — a detected yellow/silver frame rules it
-    // out, so a bordered holo is classified as "holo", never "full-art".
-    const hasFrame = yellowFrame || silverFrame;
     const holoType: CardInfo["holoType"] =
-      !hasFrame && artVar > 3200 && fullVar > 2800
-        ? "full-art"
-        : artVar > 2600
-          ? "holo"
-          : fullVar > 2600
-            ? "reverse-holo"
-            : "none";
+      artVar > 2600 ? "holo" : fullVar > 2600 ? "reverse-holo" : "none";
 
     const eraGuess = yellowFrame
       ? "Classic era (yellow border, 1999–2023 style)"

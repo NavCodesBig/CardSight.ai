@@ -27,6 +27,8 @@ interface TcgCard {
   name: string;
   number: string;
   rarity?: string;
+  supertype?: string;
+  subtypes?: string[];
   set?: { name?: string; releaseDate?: string };
   images?: { small?: string; large?: string };
   tcgplayer?: { url?: string; prices?: Record<string, { market?: number | null }> };
@@ -111,6 +113,8 @@ function toCandidate(card: TcgCard) {
     setName: card.set?.name ?? "",
     number: card.number,
     rarity: card.rarity ?? null,
+    supertype: card.supertype ?? null,
+    subtypes: card.subtypes ?? [],
     imageUrl: card.images?.large ?? card.images?.small ?? null,
     tcgUrl: card.tcgplayer?.url ?? null,
     raw: pickPrice(card),

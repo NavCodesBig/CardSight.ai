@@ -118,9 +118,14 @@ export function MarketValue({ scan }: { scan: ScanResult }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-lg font-bold">{card.name}</span>
                     {card.rarity && <Badge tone="accent">{card.rarity}</Badge>}
+                    {card.subtypes?.map((s) => (
+                      <Badge key={s} tone="good">
+                        {s}
+                      </Badge>
+                    ))}
                   </div>
                   <div className="mt-0.5 text-sm text-muted">
-                    {card.setName}
+                    {[card.supertype, card.setName].filter(Boolean).join(" · ")}
                     {card.number && ` · #${card.number}`}
                   </div>
 

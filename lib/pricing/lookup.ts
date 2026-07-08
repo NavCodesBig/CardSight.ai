@@ -45,6 +45,8 @@ export function buildMarket(
       setName: cand.setName,
       number: cand.number,
       rarity: cand.rarity,
+      supertype: cand.supertype,
+      subtypes: cand.subtypes,
       imageUrl: cand.imageUrl,
       tcgUrl: cand.tcgUrl,
     },
