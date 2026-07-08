@@ -51,7 +51,10 @@ export async function GET(request: Request) {
     .filter(Boolean)
     .map((w) => `name:"${w}*"`)
     .join(" ");
-  const cleanNumber = number?.replace(/[^A-Za-z0-9]/g, "");
+  // The API stores a card's own number ("4"), never the printed fraction
+  // ("4/102"). Normalize to that token so both the query and the rank compare
+  // hit — otherwise "4/102" → "4102" would match nothing.
+  const cleanNumber = normalizeCollectorNumber(number);
   const q = cleanNumber ? `${nameQuery} number:${cleanNumber}` : nameQuery;
 
   const headers: Record<string, string> = {};
@@ -91,12 +94,30 @@ async function search(q: string, headers: Record<string, string>): Promise<TcgCa
   }
 }
 
+/**
+ * Extract a card's own collector-number token for matching. Printed numbers
+ * come as fractions ("4/102"), set-prefixed codes ("SV49", "TG12/TG30",
+ * "H31/H32"), or bare numbers; the API stores just the left token ("4", "SV49",
+ * "TG12", "H31"). Returns lowercase for case-insensitive compare, or null.
+ */
+function normalizeCollectorNumber(raw: string | null): string | null {
+  if (!raw) return null;
+  const left = raw.trim().split("/")[0]; // drop the "/total" denominator
+  const token = left.replace(/[^A-Za-z0-9]/g, "");
+  if (!token) return null;
+  // A leading letter code ("SV", "TG", "H") keeps its digits; a bare fraction
+  // numerator drops any leading zeros ("004" → "4") to match the API form.
+  return /^[A-Za-z]/.test(token)
+    ? token.toLowerCase()
+    : token.replace(/^0+(?=\d)/, "").toLowerCase();
+}
+
 /** Rank: exact number match first, then priced cards, then most recent. */
 function rank(cards: TcgCard[], number: string | null): TcgCard[] {
   return [...cards].sort((a, b) => {
     if (number) {
-      const am = a.number === number ? 1 : 0;
-      const bm = b.number === number ? 1 : 0;
+      const am = normalizeCollectorNumber(a.number) === number ? 1 : 0;
+      const bm = normalizeCollectorNumber(b.number) === number ? 1 : 0;
       if (am !== bm) return bm - am;
     }
     const ap = pickPrice(a) ? 1 : 0;

@@ -127,20 +127,35 @@ function crop(
 
   const px = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const d = px.data;
-  // Grayscale + track range for a contrast stretch.
-  let min = 255;
-  let max = 0;
+  // Grayscale + build a luma histogram for a percentile-clipped stretch.
+  const hist = new Int32Array(256);
   for (let i = 0; i < d.length; i += 4) {
     const g = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
     d[i] = d[i + 1] = d[i + 2] = g;
-    if (g < min) min = g;
-    if (g > max) max = g;
+    hist[g]++;
   }
+  // Clip to the 2nd/98th percentiles so a lone specular highlight or shadow —
+  // routine on holo and under glare — can't pin the range and flatten the
+  // stretch. A global min/max would let one pixel do exactly that.
+  const total = (d.length / 4) | 0;
+  const min = percentile(hist, total, 0.02);
+  const max = percentile(hist, total, 0.98);
   const span = Math.max(1, max - min);
   for (let i = 0; i < d.length; i += 4) {
-    const v = ((d[i] - min) * 255) / span;
+    const v = Math.max(0, Math.min(255, ((d[i] - min) * 255) / span));
     d[i] = d[i + 1] = d[i + 2] = v;
   }
   ctx.putImageData(px, 0, 0);
   return canvas;
+}
+
+/** Luma value at the given cumulative fraction (0..1) of a 256-bin histogram. */
+function percentile(hist: Int32Array, total: number, frac: number): number {
+  const target = total * frac;
+  let cum = 0;
+  for (let g = 0; g < 256; g++) {
+    cum += hist[g];
+    if (cum >= target) return g;
+  }
+  return 255;
 }
