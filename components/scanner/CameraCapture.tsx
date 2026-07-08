@@ -10,6 +10,7 @@ const DETECT_INTERVAL_MS = 140; // run detection ~7×/sec
 const WORK_WIDTH = 380; // downscaled analysis width
 const SMOOTH = 0.4; // per-frame lerp toward the newest detection (0..1)
 const MIN_CONF = 0.6;
+const AUTO_SKIP_CONF = 0.8; // above this, skip the manual corner-adjust step
 const NEAR_COVERAGE = 0.3; // below → "move closer"
 const FAR_COVERAGE = 0.9; // above → "move back"
 
@@ -33,7 +34,7 @@ export function CameraCapture({
   onClose,
 }: {
   label: string;
-  onCapture: (file: File, quad?: Quad) => void;
+  onCapture: (file: File, quad?: Quad, confident?: boolean) => void;
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -162,6 +163,7 @@ export function CameraCapture({
     let sw = vw;
     let sh = vh;
     let quad: Quad | undefined;
+    let confident = false;
     try {
       const s = WORK_WIDTH / vw;
       const work = document.createElement("canvas");
@@ -175,6 +177,7 @@ export function CameraCapture({
         const box = boundingBox(det.quad, inv, vw, vh);
         ({ sx, sy, sw, sh } = box);
         quad = mapQuadToCrop(det.quad, inv, sx, sy);
+        confident = det.confidence >= AUTO_SKIP_CONF;
       }
     } catch {
       // Fall back to the full frame + downstream detection on any failure.
@@ -192,7 +195,7 @@ export function CameraCapture({
           `${label.toLowerCase().replace(/\s+/g, "-")}.jpg`,
           { type: "image/jpeg" }
         );
-        onCapture(file, quad);
+        onCapture(file, quad, confident);
         onClose();
       },
       "image/jpeg",

@@ -11,7 +11,9 @@ const noopSubscribe = () => () => {};
 const hasCameraSnapshot = () => !!navigator.mediaDevices?.getUserMedia;
 const noCameraSnapshot = () => false;
 
-/** Drag-drop / file / live-camera capture zone with preview. */
+type Selection = { file: File; url: string; quad?: Quad };
+
+/** Drag-drop / file / live-camera capture zone with corner-adjust + preview. */
 export function ImageCapture({
   label,
   file,
@@ -23,37 +25,49 @@ export function ImageCapture({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [committed, setCommitted] = useState<Selection | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [adjust, setAdjust] = useState<{ file: File; url: string; quad?: Quad } | null>(null);
+  const [adjust, setAdjust] = useState<(Selection & { fresh: boolean }) | null>(null);
   const hasCamera = useSyncExternalStore(
     noopSubscribe,
     hasCameraSnapshot,
     noCameraSnapshot
   );
 
-  // A capture (camera, file or drop) opens the corner-adjust step; only after
-  // the user confirms the corners does the file get committed.
-  const handle = useCallback((f: File | undefined, quad?: Quad) => {
-    if (!f || !f.type.startsWith("image/")) return;
-    setAdjust({ file: f, url: URL.createObjectURL(f), quad });
-  }, []);
+  const commit = useCallback(
+    (sel: Selection) => {
+      onSelect(sel.file, sel.quad);
+      setCommitted((prev) => {
+        if (prev && prev.url !== sel.url) URL.revokeObjectURL(prev.url);
+        return sel;
+      });
+    },
+    [onSelect]
+  );
+
+  // A capture commits immediately when auto-detection is confident; otherwise
+  // it opens the corner-adjust step first.
+  const handle = useCallback(
+    (f: File | undefined, quad?: Quad, confident?: boolean) => {
+      if (!f || !f.type.startsWith("image/")) return;
+      const url = URL.createObjectURL(f);
+      if (confident && quad) commit({ file: f, url, quad });
+      else setAdjust({ file: f, url, quad, fresh: true });
+    },
+    [commit]
+  );
 
   const confirmAdjust = useCallback(
     (finalQuad: Quad) => {
       if (!adjust) return;
-      onSelect(adjust.file, finalQuad);
-      setPreview((old) => {
-        if (old) URL.revokeObjectURL(old);
-        return adjust.url;
-      });
+      commit({ file: adjust.file, url: adjust.url, quad: finalQuad });
       setAdjust(null);
     },
-    [adjust, onSelect]
+    [adjust, commit]
   );
 
   const cancelAdjust = useCallback(() => {
-    if (adjust) URL.revokeObjectURL(adjust.url);
+    if (adjust?.fresh) URL.revokeObjectURL(adjust.url);
     setAdjust(null);
   }, [adjust]);
 
@@ -86,10 +100,10 @@ export function ImageCapture({
           className="hidden"
           onChange={(e) => handle(e.target.files?.[0])}
         />
-        {preview ? (
+        {committed ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview} alt={label} className="h-full w-full object-cover" />
+            <img src={committed.url} alt={label} className="h-full w-full object-cover" />
             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-3 text-center text-xs font-medium text-white">
               {file?.name} — tap to replace
             </div>
@@ -110,7 +124,7 @@ export function ImageCapture({
           </div>
         )}
         {/* Corner guides, scanner-app style */}
-        {!preview && (
+        {!committed && (
           <div aria-hidden className="pointer-events-none absolute inset-4 opacity-50">
             {["top-0 left-0 border-t-2 border-l-2", "top-0 right-0 border-t-2 border-r-2", "bottom-0 left-0 border-b-2 border-l-2", "bottom-0 right-0 border-b-2 border-r-2"].map(
               (pos) => (
@@ -123,6 +137,17 @@ export function ImageCapture({
           </div>
         )}
       </button>
+
+      {committed && (
+        <button
+          type="button"
+          onClick={() => setAdjust({ ...committed, fresh: false })}
+          aria-label={`Adjust corners for ${label}`}
+          className="absolute -bottom-3 -left-3 flex items-center gap-1.5 rounded-full glass-strong px-3.5 py-2 text-xs font-semibold shadow-xl transition-transform hover:scale-105"
+        >
+          ✥ Adjust
+        </button>
+      )}
 
       {hasCamera && (
         <button
