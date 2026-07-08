@@ -174,6 +174,53 @@ export function fitLine(
   return line;
 }
 
+/**
+ * RANSAC line fit — robust to background clutter. Where a card edge is a long
+ * straight run of collinear points, scattered background edges are outliers the
+ * consensus line ignores. Deterministic (seeded from the data) so repeated runs
+ * on the same input give the same line. Falls back to a plain least-squares fit.
+ * Fits x = a*y + b when `vertical`, else y = a*x + b.
+ */
+export function ransacLine(
+  points: Point[],
+  vertical: boolean,
+  tol = 3,
+  iters = 80
+): { a: number; b: number } | null {
+  if (points.length < 4) return fitLine(points, vertical);
+  const u = (p: Point) => (vertical ? p.y : p.x);
+  const v = (p: Point) => (vertical ? p.x : p.y);
+
+  // Deterministic LCG seeded from the point set.
+  let seed = (points.length * 2654435761) >>> 0;
+  const rnd = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  const pick = () => points[(rnd() * points.length) | 0];
+
+  let best: { a: number; b: number } | null = null;
+  let bestCount = 0;
+  for (let it = 0; it < iters; it++) {
+    const p1 = pick();
+    const p2 = pick();
+    const du = u(p2) - u(p1);
+    if (Math.abs(du) < 1e-6) continue;
+    const a = (v(p2) - v(p1)) / du;
+    const b = v(p1) - a * u(p1);
+    let count = 0;
+    for (const p of points) if (Math.abs(v(p) - (a * u(p) + b)) < tol) count++;
+    if (count > bestCount) {
+      bestCount = count;
+      best = { a, b };
+    }
+  }
+  if (!best) return fitLine(points, vertical);
+  // Least-squares refit on the inliers of the best model.
+  const inliers = points.filter((p) => Math.abs(v(p) - (best!.a * u(p) + best!.b)) < tol);
+  return inliers.length >= 4 ? fitLine(inliers, vertical) : best;
+}
+
 /** Intersect x = a1*y + b1 (vertical-ish) with y = a2*x + b2 (horizontal-ish). */
 export function intersectVH(
   v: { a: number; b: number },

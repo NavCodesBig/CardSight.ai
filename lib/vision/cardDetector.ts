@@ -10,9 +10,9 @@
 
 import {
   boxBlur,
-  fitLine,
   gradientMagnitude,
   intersectVH,
+  ransacLine,
   rotate90,
   toGray,
   warpQuad,
@@ -74,10 +74,10 @@ export function detectCard(img: ImageData): DetectionResult {
     }
   }
 
-  const left = fitLine(leftPts, true);
-  const right = fitLine(rightPts, true);
-  const top = fitLine(topPts, false);
-  const bottom = fitLine(bottomPts, false);
+  const left = ransacLine(leftPts, true);
+  const right = ransacLine(rightPts, true);
+  const top = ransacLine(topPts, false);
+  const bottom = ransacLine(bottomPts, false);
 
   if (!left || !right || !top || !bottom) {
     // Fall back to the full frame with low confidence.
