@@ -30,6 +30,8 @@ export interface CatalogEntry {
   setName: string | null;
   releaseDate: string | null; // "YYYY/MM/DD"
   rarity: string | null;
+  supertype?: string | null;
+  subtypes?: string[];
 }
 
 export interface MatchResult {

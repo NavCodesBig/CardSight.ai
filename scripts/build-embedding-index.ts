@@ -37,6 +37,7 @@ const NDJSON = join(CARDREF, "cards.ndjson");
 const IMG_DIR = join(CARDREF, "img");
 const OUT_VEC = join(CARDREF, "embeddings.f32");
 const OUT_IDS = join(CARDREF, "embeddings.ids.json");
+const OUT_CATALOG = join(CARDREF, "catalog.json");
 
 // Fractional art window. Tuned for classic layouts; the same crop is applied to
 // the query at scan time, so consistency matters more than pixel-perfection.
@@ -44,8 +45,29 @@ const ART = { x0: 0.1, y0: 0.13, x1: 0.9, y1: 0.52 };
 
 interface RefRow {
   id: string;
+  name: string;
+  number: string;
+  setName: string | null;
+  releaseDate: string | null;
+  rarity: string | null;
+  supertype: string | null;
+  subtypes: string[];
   imageLarge: string | null;
   imageSmall: string | null;
+}
+
+/** Compact identity the browser needs to re-rank and display a match. */
+function toCatalogEntry(r: RefRow) {
+  return {
+    id: r.id,
+    name: r.name,
+    number: r.number,
+    setName: r.setName,
+    releaseDate: r.releaseDate,
+    rarity: r.rarity,
+    supertype: r.supertype,
+    subtypes: r.subtypes ?? [],
+  };
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -110,6 +132,7 @@ async function main() {
   const rl = createInterface({ input: createReadStream(NDJSON), crlfDelay: Infinity });
   const ids: string[] = [];
   const vectors: Float32Array[] = [];
+  const catalog: ReturnType<typeof toCatalogEntry>[] = [];
   let seen = 0;
   let skipped = 0;
 
@@ -134,6 +157,7 @@ async function main() {
     }
     ids.push(row.id);
     vectors.push(vec);
+    catalog.push(toCatalogEntry(row));
     seen++;
     if (seen % 25 === 0) process.stdout.write(`\r  embedded ${seen} (skipped ${skipped})   `);
   }
@@ -145,10 +169,12 @@ async function main() {
   });
   await writeFile(OUT_VEC, buf);
   await writeFile(OUT_IDS, JSON.stringify({ dim: DIM, model: MODEL, art: ART, ids }));
+  await writeFile(OUT_CATALOG, JSON.stringify(catalog));
 
   process.stdout.write("\n");
   console.log(`Done. ${ids.length} vectors (${DIM}-d) -> ${OUT_VEC}`);
   console.log(`Ids -> ${OUT_IDS}`);
+  console.log(`Catalog -> ${OUT_CATALOG}`);
   if (skipped) console.log(`Skipped ${skipped} (no image / fetch or embed failure).`);
 }
 

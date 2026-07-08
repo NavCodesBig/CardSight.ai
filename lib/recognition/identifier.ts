@@ -81,10 +81,20 @@ class HeuristicIdentifier implements CardIdentifier {
   }
 }
 
-const identifier: CardIdentifier = new HeuristicIdentifier();
+export const heuristicIdentifier: CardIdentifier = new HeuristicIdentifier();
+
+// Runtime-swappable so the client can install the embedding recognizer once its
+// index is available (see setCardIdentifier), while server/SSR and any path
+// without the index keep the zero-dependency heuristic.
+let active: CardIdentifier = heuristicIdentifier;
+
+/** Install a different identifier (e.g. EmbeddingIdentifier on the client). */
+export function setCardIdentifier(identifier: CardIdentifier): void {
+  active = identifier;
+}
 
 export function identifyCard(front: ImageData): Promise<CardInfo> {
-  return identifier.identify(front);
+  return active.identify(front);
 }
 
 function regionColorVariance(
