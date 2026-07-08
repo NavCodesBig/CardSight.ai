@@ -100,6 +100,11 @@ export default function ResultsPage() {
                   Composite {scan.grade.composite ?? scan.grade.overall} · weakest-link final{" "}
                   {scan.grade.overall}
                 </div>
+                {scan.grade.range && (
+                  <div className="mt-0.5 text-xs text-muted">
+                    Likely range {scan.grade.range.low}–{scan.grade.range.high}
+                  </div>
+                )}
                 {scan.grade.structuralCap != null && (
                   <div className="mt-1 text-xs font-semibold text-rose-400">
                     ⚠ Structural damage — grade capped at {scan.grade.structuralCap}
@@ -108,6 +113,10 @@ export default function ResultsPage() {
                 <div className="mx-auto mt-4 w-52 sm:mx-0">
                   <ConfidenceMeter value={scan.grade.confidence} />
                 </div>
+                <p className="mt-3 max-w-md text-xs text-muted">
+                  Estimate from photos — not a certified grade. The confidence bar reflects
+                  image and detection quality, not the odds the grade is exact.
+                </p>
               </div>
             </div>
           </div>

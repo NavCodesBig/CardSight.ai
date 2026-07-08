@@ -96,6 +96,15 @@ describe("computeGrade", () => {
     expect(g.structuralCap).toBeNull();
   });
 
+  it("brackets the overall estimate in an uncertainty range", () => {
+    const face = makeFace({ centering: 8, corners: 8, edges: 8, surface: 8 });
+    const g = computeGrade(face, face);
+    expect(g.range.low).toBeLessThanOrEqual(g.overall);
+    expect(g.range.high).toBeGreaterThanOrEqual(g.overall);
+    expect(g.range.low).toBeGreaterThanOrEqual(1);
+    expect(g.range.high).toBeLessThanOrEqual(10);
+  });
+
   it("caps the final grade at the weakest subgrade (weakest-link)", () => {
     const face = makeFace({ centering: 9, corners: 6, edges: 9, surface: 9 });
     const g = computeGrade(face, face);

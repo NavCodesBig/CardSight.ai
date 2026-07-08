@@ -33,6 +33,8 @@ export interface GradeResult {
   limitingFactor: SubgradeKey;
   /** Set when structural damage forced an automatic cap. */
   structuralCap: number | null;
+  /** Honest uncertainty band around the overall estimate. */
+  range: { low: number; high: number };
 }
 
 /** DCM front/back weighting: front 55%, back 45%. */
@@ -84,6 +86,14 @@ export function computeGrade(front: FaceAnalysis, back: FaceAnalysis): GradeResu
   };
   const confidence = Math.round(((q(front) + q(back)) / 2) * 0.92 * 100) / 100;
 
+  // Honest uncertainty band: a photo-based heuristic can't claim half-point
+  // precision, so widen the band as confidence drops.
+  const halfWidth = roundHalf(0.5 + (1 - confidence));
+  const range = {
+    low: roundHalf(Math.max(1, overall - halfWidth)),
+    high: roundHalf(Math.min(10, overall + halfWidth)),
+  };
+
   return {
     subgrades,
     composite,
@@ -91,6 +101,7 @@ export function computeGrade(front: FaceAnalysis, back: FaceAnalysis): GradeResu
     confidence,
     limitingFactor,
     structuralCap,
+    range,
   };
 }
 
