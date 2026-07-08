@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { getScan, toggleFavorite } from "@/lib/storage";
 import { shareOrDownloadReport } from "@/lib/reportCard";
 import type { ScanResult } from "@/lib/analyze";
+import type { MarketData } from "@/lib/pricing/types";
 import { gradeLabel, SUBGRADE_WEIGHTS, type SubgradeKey } from "@/lib/grading/scale";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { GradeRing } from "@/components/ui/GradeRing";
@@ -31,11 +32,13 @@ export default function ResultsPage() {
   const [face, setFace] = useState<"front" | "back">("front");
   const [fav, setFav] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [market, setMarket] = useState<MarketData | null>(null);
 
   useEffect(() => {
     getScan(id).then((s) => {
       setScan(s);
       setFav(s?.favorite ?? false);
+      setMarket(s?.market ?? null);
     });
   }, [id]);
 
@@ -81,9 +84,22 @@ export default function ResultsPage() {
             <div className="flex flex-wrap items-center justify-center gap-2 lg:justify-start">
               <Badge tone="accent">AI pre-grade estimate</Badge>
               <Badge>DCM-aligned · 3-pass</Badge>
-              {scan.cardInfo.eraGuess && <Badge>{scan.cardInfo.eraGuess}</Badge>}
-              {scan.cardInfo.holoType !== "none" && (
-                <Badge tone="good">{scan.cardInfo.holoType}</Badge>
+              {market?.card ? (
+                <>
+                  {market.card.rarity && <Badge tone="good">{market.card.rarity}</Badge>}
+                  {market.card.subtypes?.slice(0, 3).map((s) => (
+                    <Badge key={s} tone="good">
+                      {s}
+                    </Badge>
+                  ))}
+                </>
+              ) : (
+                <>
+                  {scan.cardInfo.eraGuess && <Badge>{scan.cardInfo.eraGuess}</Badge>}
+                  {scan.cardInfo.holoType !== "none" && (
+                    <Badge tone="good">{scan.cardInfo.holoType}</Badge>
+                  )}
+                </>
               )}
             </div>
             <h1 className="mt-4 text-sm font-semibold uppercase tracking-widest text-muted">
@@ -152,7 +168,7 @@ export default function ResultsPage() {
       </section>
 
       {/* Market value */}
-      <MarketValue scan={scan} />
+      <MarketValue scan={scan} onResolved={setMarket} />
 
       {/* Face inspector */}
       <section>

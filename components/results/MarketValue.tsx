@@ -21,7 +21,13 @@ type Status = "loading" | "ready" | "error";
  * search by name if recognition misses. The selected result is cached onto the
  * stored scan. The search box is always available.
  */
-export function MarketValue({ scan }: { scan: ScanResult }) {
+export function MarketValue({
+  scan,
+  onResolved,
+}: {
+  scan: ScanResult;
+  onResolved?: (m: MarketData) => void;
+}) {
   const likelyPsa =
     scan.companyEstimates.find((e) => e.company === "PSA")?.mostLikely ??
     scan.grade.overall;
@@ -31,6 +37,11 @@ export function MarketValue({ scan }: { scan: ScanResult }) {
   const [status, setStatus] = useState<Status>(scan.market ? "ready" : "loading");
   const [query, setQuery] = useState(scan.market?.query.name ?? "");
   const [numberQuery, setNumberQuery] = useState(scan.market?.query.number ?? "");
+
+  // Surface the resolved market (identity/type/price) to the parent page.
+  useEffect(() => {
+    if (selected) onResolved?.(selected);
+  }, [selected, onResolved]);
 
   const choose = useCallback(
     async (
