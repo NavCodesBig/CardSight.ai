@@ -1,0 +1,5 @@
+[
+  { "image": "chansey-front.jpg", "name": "Chansey", "set": "Evolutions", "number": "2" },
+  { "image": "charizard-front.jpg", "name": "Charizard", "set": "Base", "number": "4" },
+  { "image": "clean-render.png", "name": "Pikachu", "set": "Base", "number": "58", "rectified": true }
+]

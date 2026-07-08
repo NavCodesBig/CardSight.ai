@@ -46,3 +46,6 @@ datasets/rectified
 datasets/masks
 datasets/cardref/*
 !datasets/cardref/README.md
+datasets/eval/*
+!datasets/eval/README.md
+!datasets/eval/labels.example.json
