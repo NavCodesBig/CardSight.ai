@@ -114,6 +114,16 @@ export function detectCard(img: ImageData): DetectionResult {
   const coverage = g.area / (w * h);
   const expectedAspect = CARD_WIDTH_MM / CARD_HEIGHT_MM; // ≈ 0.714
 
+  // Card-shape alone isn't enough: a quad fitted to background clutter can be
+  // perfectly card-shaped yet enclose a window, wall, or hand. A real card
+  // interior is not largely blown out; a specular window bleeding into the quad
+  // is. This is what rejected the false lock that graded a kitchen window as a
+  // card at high confidence. (Edge density is too low on legitimately smooth art
+  // — e.g. a pale character body — to gate on, so blown-out fraction is the
+  // discriminator.)
+  const interior = interiorStats(img, quad);
+  const interiorOk = interior.blownFrac < 0.3;
+
   const valid =
     inFrame &&
     g.convex &&
@@ -124,11 +134,12 @@ export function detectCard(img: ImageData): DetectionResult {
     g.oppRatioH > 0.7 &&
     g.oppRatioV > 0.7 &&
     g.maxAngleDev < 22 &&
-    g.minSide > w * 0.1;
+    g.minSide > w * 0.1 &&
+    interiorOk;
 
   if (!valid) {
-    // Not card-shaped — report low confidence so the live overlay won't lock
-    // and the pipeline treats detection as unreliable.
+    // Not card-shaped (or not card-like inside) — report low confidence so the
+    // live overlay won't lock and the pipeline treats detection as unreliable.
     return { quad, confidence: 0.2 };
   }
 
@@ -137,9 +148,13 @@ export function detectCard(img: ImageData): DetectionResult {
     (leftPts.length + rightPts.length + topPts.length + bottomPts.length) /
     ((yEnd - yStart) / 3 + (xEnd - xStart) / 3) / 2;
   const squareness = 1 - g.maxAngleDev / 22; // 0..1
+  // Specular interior (glare/window bleeding into the quad) erodes trust even
+  // when the shape passes: 0% blown → no penalty, ≥40% blown → floored.
+  const glareTrust = 1 - Math.min(1, interior.blownFrac / 0.4);
   const confidence = Math.min(
     1,
-    0.62 + 0.25 * Math.min(1, density) + 0.1 * squareness
+    (0.62 + 0.25 * Math.min(1, density) + 0.1 * squareness) *
+      (0.35 + 0.65 * glareTrust)
   );
 
   return { quad, confidence };
@@ -199,6 +214,36 @@ function quadGeometry(q: Quad): QuadGeometry {
 
 function dist(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+/**
+ * Fraction of the quad's interior that is specular/blown-out. The bounding box
+ * is inset 15% to skip the located outline itself. A real card interior reads
+ * low here; a window or direct-light hotspot bleeding into a clutter-fitted
+ * quad reads high — the signal that separates a card from a bright background.
+ */
+function interiorStats(img: ImageData, q: Quad): { blownFrac: number } {
+  const xs = [q.tl.x, q.tr.x, q.br.x, q.bl.x];
+  const ys = [q.tl.y, q.tr.y, q.br.y, q.bl.y];
+  const bw = Math.max(...xs) - Math.min(...xs);
+  const bh = Math.max(...ys) - Math.min(...ys);
+  const x0 = Math.max(0, Math.round(Math.min(...xs) + bw * 0.15));
+  const x1 = Math.min(img.width - 1, Math.round(Math.max(...xs) - bw * 0.15));
+  const y0 = Math.max(0, Math.round(Math.min(...ys) + bh * 0.15));
+  const y1 = Math.min(img.height - 1, Math.round(Math.max(...ys) - bh * 0.15));
+
+  let n = 0;
+  let blown = 0;
+  const d = img.data;
+  for (let y = y0; y <= y1; y += 4) {
+    for (let x = x0; x <= x1; x += 4) {
+      n++;
+      const i = (y * img.width + x) * 4;
+      if (d[i] > 250 && d[i + 1] > 250 && d[i + 2] > 250) blown++;
+    }
+  }
+  if (!n) return { blownFrac: 1 };
+  return { blownFrac: blown / n };
 }
 
 /** Standard rectified output size: 0.1 mm per pixel. */

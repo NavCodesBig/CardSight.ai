@@ -154,5 +154,30 @@ check(
   );
 }
 
+// Trust gate: a card-shaped but blown-out region (a window/light hotspot the
+// edge scan locks onto in a cluttered handheld photo) must NOT report high
+// confidence — otherwise the pipeline grades a kitchen window as a card.
+{
+  const glare = new NodeImageData(W, H) as unknown as ImageData;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const inCard =
+        x >= CARD_X && x < CARD_X + CARD_W && y >= CARD_Y && y < CARD_Y + CARD_H;
+      const i = (y * W + x) * 4;
+      const v = inCard ? 255 : 38; // blown-out interior on dark background
+      glare.data[i] = v;
+      glare.data[i + 1] = v;
+      glare.data[i + 2] = inCard ? 255 : 44;
+      glare.data[i + 3] = 255;
+    }
+  }
+  const gdet = detectCard(glare);
+  check(
+    "trust gate: blown-out card-shaped region rejected (conf ≤ 0.3)",
+    gdet.confidence <= 0.3,
+    `conf=${gdet.confidence.toFixed(2)}`
+  );
+}
+
 console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);

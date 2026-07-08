@@ -125,7 +125,16 @@ export async function analyzeCard(
   // measurement taken from them — are unreliable, so damp the reported grade
   // confidence to match how well the card was actually located.
   const avgDet = (frontDet.confidence + backDet.confidence) / 2;
-  grade.confidence = Math.round(grade.confidence * Math.min(1, avgDet / 0.75) * 100) / 100;
+  // Photo quality gates confidence too: glare, blur, darkness, or a card that
+  // doesn't fill the frame all make every downstream measurement unreliable,
+  // so the reported number must reflect that instead of trusting a clean-shape
+  // detection. The weaker of the two faces sets the ceiling.
+  const qual = Math.min(
+    qualityFactor(frontFace.quality),
+    qualityFactor(backFace.quality)
+  );
+  grade.confidence =
+    Math.round(grade.confidence * Math.min(1, avgDet / 0.75) * qual * 100) / 100;
   const companyEstimates = estimateCompanyGrades(grade.overall, grade.confidence);
   const submission = submissionRecommendation(grade.overall, grade.confidence);
   const explanations = explainGrade(frontFace, backFace, grade);
@@ -277,6 +286,19 @@ function consensusSurface(passes: SurfaceAnalysis[]): SurfaceAnalysis {
     glossConsistency: meanRound(passes.map((p) => p.glossConsistency), 3),
     score: meanRound(passes.map((p) => p.score)),
   };
+}
+
+/**
+ * Confidence multiplier (0..1) for a face's photo quality. Each flagged problem
+ * compounds — a blurry, glary photo is trusted far less than a clean one.
+ */
+function qualityFactor(q: FaceAnalysis["quality"]): number {
+  let f = 1;
+  if (q.blurry) f *= 0.55;
+  if (q.tooMuchGlare) f *= 0.6;
+  if (q.tooDark || q.tooBright) f *= 0.8;
+  if (q.tooFar) f *= 0.7;
+  return f;
 }
 
 function meanRound(v: number[], decimals = 1): number {
