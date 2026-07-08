@@ -14,11 +14,17 @@
 import SPECIES_JSON from "./pokemonNames.json";
 import TRAINER_JSON from "./trainerNames.json";
 import JA_JSON from "./pokemonNamesJa.json";
+import JA_TRAINER_JSON from "./trainerNamesJa.json";
 
 const SPECIES_NORM = (SPECIES_JSON as string[]).map((n) => ({ display: n, norm: normalize(n) }));
 const TRAINER_NORM = (TRAINER_JSON as string[]).map((n) => ({ display: n, norm: normalize(n) }));
 // Japanese (katakana) → English display, for OCR of Japanese-language cards.
 const JA_NORM = (JA_JSON as { ja: string; en: string }[]).map((p) => ({
+  display: p.en,
+  norm: normalizeJa(p.ja),
+}));
+// Japanese Trainer / Item / Energy card names → English.
+const JA_TRAINER_NORM = (JA_TRAINER_JSON as { ja: string; en: string }[]).map((p) => ({
   display: p.en,
   norm: normalizeJa(p.ja),
 }));
@@ -92,13 +98,15 @@ export function snapScored(raw: string | null): Match | null {
   return pokemon; // tidied fallback (low sim)
 }
 
-/** Match Japanese (katakana) OCR text to the English card name. */
+/** Match Japanese OCR text to an English card name (Pokémon or Trainer/Item). */
 export function snapJapanese(raw: string | null): Match | null {
   if (!raw) return null;
   const b = normalizeJa(raw);
   if (b.length < 2) return null;
-  const m = fuzzyNorm(b, JA_NORM);
-  return m && m.sim >= 0.6 ? m : null;
+  const best = [fuzzyNorm(b, JA_NORM), fuzzyNorm(b, JA_TRAINER_NORM)]
+    .filter((m): m is Match => m !== null)
+    .sort((a, b) => b.sim - a.sim)[0];
+  return best && best.sim >= 0.6 ? best : null;
 }
 
 /** Pokémon path: split off modifiers, fuzzy-match the base species. */
