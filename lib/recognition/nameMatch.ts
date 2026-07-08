@@ -1,19 +1,24 @@
 /**
  * Snap noisy OCR output to a real Pokémon card name.
  *
- * Card names are a fixed vocabulary: a base species (Charizard) plus optional
- * modifiers (ex, GX, V, VMAX, VSTAR, Dark, Radiant, Alolan …). We fuzzy-match
- * the OCR'd base against the bundled species dictionary and recognize modifier
- * tokens separately, so "Charizard ex" or "Dark Charizard" reconstruct cleanly
- * even when the raw OCR is slightly wrong ("Chansei" → "Chansey").
+ * Two dictionaries are matched:
+ *   • Pokémon species (Charizard) + a modifier vocabulary (ex, GX, V, VMAX,
+ *     VSTAR, Dark, Radiant, Alolan …) — so "Charizard ex" / "Dark Charizard"
+ *     reconstruct even when the OCR is slightly wrong ("Chansei" → Chansey).
+ *   • Trainer / Energy card names (Professor's Research, Ultra Ball, Boss's
+ *     Orders …) matched as whole strings.
+ * Whichever dictionary yields the closer match (by normalized edit distance)
+ * wins, so both Pokémon and non-Pokémon card names are recognized.
  */
 
-import NAMES from "./pokemonNames.json";
+import SPECIES_JSON from "./pokemonNames.json";
+import TRAINER_JSON from "./trainerNames.json";
 
-const SPECIES: string[] = NAMES as string[];
-const SPECIES_NORM = SPECIES.map((n) => ({ display: n, norm: normalize(n) }));
+const SPECIES_NORM = (SPECIES_JSON as string[]).map((n) => ({ display: n, norm: normalize(n) }));
+const TRAINER_NORM = (TRAINER_JSON as string[]).map((n) => ({ display: n, norm: normalize(n) }));
 
-// Modifier vocabulary. Suffix tags trail the name; prefixes lead it.
+const ACCEPT = 0.62; // minimum similarity to trust a match
+
 const SUFFIX_DISPLAY: Record<string, string> = {
   ex: "ex",
   gx: "GX",
@@ -51,16 +56,36 @@ const PREFIX_DISPLAY: Record<string, string> = {
 const SUFFIX_KEYS = Object.keys(SUFFIX_DISPLAY);
 const PREFIX_KEYS = Object.keys(PREFIX_DISPLAY);
 
+interface Match {
+  display: string;
+  sim: number;
+}
+
 /** Correct an OCR'd name to the nearest real card name, or null if hopeless. */
 export function snapToName(raw: string | null): string | null {
   if (!raw) return null;
+  const cleaned = raw.trim();
+  if (cleaned.length < 2) return null;
+
+  const pokemon = speciesPath(cleaned);
+  const trainer = fuzzyList(cleaned, TRAINER_NORM);
+
+  const candidates = [pokemon, trainer].filter((m): m is Match => m !== null && m.sim >= ACCEPT);
+  if (candidates.length > 0) {
+    return candidates.sort((a, b) => b.sim - a.sim)[0].display;
+  }
+  // Nothing confident — return a tidied version of what was read.
+  return pokemon?.display ?? titleCase(cleaned);
+}
+
+/** Pokémon path: split off modifiers, fuzzy-match the base species. */
+function speciesPath(raw: string): Match | null {
   const tokens = raw.toLowerCase().split(/\s+/).filter((t) => t.length > 0);
   if (tokens.length === 0) return null;
 
   const prefixes: string[] = [];
   const suffixes: string[] = [];
   const nameTokens: string[] = [];
-
   for (const t of tokens) {
     const suf = nearestModifier(t, SUFFIX_KEYS);
     if (suf) {
@@ -76,33 +101,34 @@ export function snapToName(raw: string | null): string | null {
   }
 
   const base = nameTokens.join("");
-  const species = base.length >= 2 ? fuzzySpecies(base) : null;
-  const name = species ?? titleCase(nameTokens.join(" "));
+  const species = base.length >= 2 ? fuzzyList(base, SPECIES_NORM) : null;
+  const name = species?.display ?? titleCase(nameTokens.join(" "));
   if (!name) return null;
-
-  return [...prefixes, name, ...suffixes].join(" ").trim();
+  const display = [...prefixes, name, ...suffixes].join(" ").trim();
+  // Confidence for the Pokémon path is driven by the species match.
+  return { display, sim: species?.sim ?? 0 };
 }
 
-/** Nearest species by normalized edit distance; null if no confident match. */
-function fuzzySpecies(base: string): string | null {
-  const b = normalize(base);
+/** Best match of a whole string against a normalized dictionary. */
+function fuzzyList(s: string, list: { display: string; norm: string }[]): Match | null {
+  const b = normalize(s);
+  if (b.length < 2) return null;
   let best: string | null = null;
   let bestSim = 0;
-  for (const { display, norm } of SPECIES_NORM) {
-    if (norm === b) return display; // exact
+  for (const { display, norm } of list) {
+    if (norm === b) return { display, sim: 1 };
     const sim = 1 - levenshtein(b, norm) / Math.max(b.length, norm.length);
     if (sim > bestSim) {
       bestSim = sim;
       best = display;
     }
   }
-  return bestSim >= 0.62 ? best : null;
+  return best ? { display: best, sim: bestSim } : null;
 }
 
 function nearestModifier(token: string, keys: string[]): string | null {
   if (keys.includes(token)) return token;
-  // Short tags (v, ex, gx) only match exactly to avoid false hits.
-  if (token.length <= 2) return null;
+  if (token.length <= 2) return null; // short tags only match exactly
   for (const k of keys) {
     if (k.length > 2 && levenshtein(token, k) <= 1) return k;
   }
