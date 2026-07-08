@@ -49,3 +49,6 @@ datasets/cardref/*
 datasets/eval/*
 !datasets/eval/README.md
 !datasets/eval/labels.example.json
+
+# tesseract.js language models (downloaded on first headless OCR run)
+*.traineddata
