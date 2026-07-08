@@ -17,13 +17,13 @@
  *     `image` is relative to datasets/eval/. Set `rectified: true` for an image
  *     that is already a clean card crop (skips detection).
  *
- * This cut matches on ART ONLY (CLIP). The OCR name/number re-rank — the signal
- * that separates reprints — is pending ocr.ts being decoupled from the browser
- * so tesseract can run headless here; see matcher.ts (it already accepts OCR).
+ * Matches on CLIP art + the OCR name/number re-rank (the signal that separates
+ * reprints), running the shipping OCR core headless via a sharp PNG bridge.
  */
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import sharp from "sharp";
 
 // ImageData polyfill for Node (same shape the vision pipeline expects).
 class NodeImageData {
@@ -43,6 +43,16 @@ import { detectCardOriented, rectifyCard } from "../lib/vision/cardDetector";
 import { embedArt } from "../lib/recognition/embed";
 import { matchCard, type CatalogEntry, type EmbeddingIndex } from "../lib/recognition/matcher";
 import { parseIndex, catalogLookup, type IndexMeta } from "../lib/recognition/cardIndex";
+import { extractCardTextFromPixels, type PixelData } from "../lib/recognition/ocrCore";
+
+/** Node bridge: a preprocessed crop → a PNG buffer tesseract reads headless. */
+function toPng(p: PixelData): Promise<Buffer> {
+  return sharp(Buffer.from(p.data.buffer, p.data.byteOffset, p.data.byteLength), {
+    raw: { width: p.width, height: p.height, channels: 4 },
+  })
+    .png()
+    .toBuffer();
+}
 
 const CARDREF = join(process.cwd(), "datasets", "cardref");
 const EVAL = join(process.cwd(), "datasets", "eval");
@@ -101,8 +111,11 @@ async function main() {
       const { image, detection } = detectCardOriented(img);
       img = rectifyCard(image, detection.quad);
     }
-    const embedding = await embedArt(img, meta.art);
-    const m = matchCard({ queryEmbedding: embedding, index, catalog });
+    const [embedding, ocr] = await Promise.all([
+      embedArt(img, meta.art),
+      extractCardTextFromPixels(img, toPng),
+    ]);
+    const m = matchCard({ queryEmbedding: embedding, ocr, index, catalog });
 
     const gotName = m?.entry.name ?? null;
     const gotSet = m?.entry.setName ?? null;
@@ -115,12 +128,12 @@ async function main() {
       if (setOk) setHits++;
       setMark = setOk ? " set✓" : ` set✗(${gotSet})`;
     }
-    console.log(`${nameOk ? "✓" : "✗"} ${c.image}: got "${gotName}"${nameMark(nameOk, c.name)}${setMark} art=${m?.artScore ?? "-"}`);
+    const ocrStr = `ocr[${ocr.name ?? "-"}/${ocr.number ?? "-"}]`;
+    console.log(`${nameOk ? "✓" : "✗"} ${c.image}: got "${gotName}"${nameMark(nameOk, c.name)}${setMark} ${ocrStr} art=${m?.artScore ?? "-"} via=${m?.method ?? "-"}`);
   }
 
   console.log(`\nName top-1: ${nameHits}/${cases.length} (${pct(nameHits, cases.length)})`);
   if (setScored) console.log(`Set  top-1: ${setHits}/${setScored} (${pct(setHits, setScored)})`);
-  console.log("(art-only — OCR re-rank pending headless ocr.ts)");
 }
 
 function nameMark(ok: boolean, truth: string): string {

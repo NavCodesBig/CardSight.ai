@@ -41,5 +41,5 @@ Top-1 name/set accuracy plus per-case hits/misses. Split by physical card if you
 add multiple shots of one card — never let the same card land in both a tuning
 set and a test set.
 
-This cut matches on **art only** (CLIP). The OCR name/number re-rank — which
-separates identical-art reprints — is added once `ocr.ts` runs headless.
+Matches on CLIP art **plus** the OCR name/number re-rank (the shipping OCR core
+runs headless via a PNG bridge), so reprints separate by number.
