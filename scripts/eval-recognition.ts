@@ -25,15 +25,22 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
 
-// ImageData polyfill for Node (same shape the vision pipeline expects).
+// ImageData polyfill for Node supporting both DOM constructor forms:
+// (width, height) — used by warpQuad/rotate90 — and (data, width, height).
 class NodeImageData {
   data: Uint8ClampedArray;
   width: number;
   height: number;
-  constructor(data: Uint8ClampedArray, w: number, h: number) {
-    this.data = data;
-    this.width = w;
-    this.height = h;
+  constructor(a: Uint8ClampedArray | number, b: number, c?: number) {
+    if (typeof a === "number") {
+      this.width = a;
+      this.height = b;
+      this.data = new Uint8ClampedArray(a * b * 4);
+    } else {
+      this.data = a;
+      this.width = b;
+      this.height = c!;
+    }
   }
 }
 (globalThis as Record<string, unknown>).ImageData = NodeImageData;

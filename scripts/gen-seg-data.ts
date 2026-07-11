@@ -79,16 +79,26 @@ async function main() {
     const ch = Math.round((cw * (meta.height ?? 342)) / (meta.width ?? 245));
     const angle = (rnd() - 0.5) * 30;
 
-    const posed = await sharp(cardBuf)
+    let posed = await sharp(cardBuf)
       .resize(cw, ch)
       .rotate(angle, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .png()
       .toBuffer();
-    const pm = await sharp(posed).metadata();
+    let pm = await sharp(posed).metadata();
+    // Rotation grows the bounding box; sharp cannot composite an input larger
+    // than the canvas, so shrink oversized poses back into frame.
+    if (pm.width! > W || pm.height! > H) {
+      const s = Math.min(W / pm.width!, H / pm.height!) * 0.98;
+      posed = await sharp(posed)
+        .resize(Math.floor(pm.width! * s), Math.floor(pm.height! * s))
+        .png()
+        .toBuffer();
+      pm = await sharp(posed).metadata();
+    }
     const pw = pm.width!;
     const ph = pm.height!;
-    const left = Math.round(rnd() * Math.max(1, W - pw * 0.8) - pw * 0.1);
-    const top = Math.round(rnd() * Math.max(1, H - ph * 0.8) - ph * 0.1);
+    const left = Math.round(rnd() * Math.max(1, W - pw));
+    const top = Math.round(rnd() * Math.max(1, H - ph));
 
     // 15% negatives: background only, empty mask — the detector must be able
     // to say "no card here".
