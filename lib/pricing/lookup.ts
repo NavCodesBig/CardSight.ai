@@ -17,19 +17,34 @@ export async function readCardText(
   return extractCardText(rectifiedDataUrl);
 }
 
-/** Fetch ranked candidate cards for a name (+ optional collector number). */
+/** Fetch ranked candidate cards for a name (+ optional collector number).
+ *  Retries once: the upstream card API 502s routinely at the anonymous rate
+ *  limit, and a single transient failure shouldn't blank the whole panel. */
 export async function fetchCandidates(
   name: string,
   number: string | null
 ): Promise<Candidate[]> {
   const params = new URLSearchParams({ name: name.trim() });
   if (number) params.set("number", number);
-  const res = await fetch(`/api/price?${params.toString()}`, {
-    signal: AbortSignal.timeout(12000),
-  });
-  if (!res.ok && res.status !== 200) throw new Error(`Price lookup failed (${res.status})`);
-  const data = (await res.json()) as { results?: Candidate[] };
-  return data.results ?? [];
+
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const res = await fetch(`/api/price?${params.toString()}`, {
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!res.ok) {
+        lastErr = new Error(`Price lookup failed (${res.status})`);
+        continue;
+      }
+      const data = (await res.json()) as { results?: Candidate[] };
+      return data.results ?? [];
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("Price lookup failed");
 }
 
 /** Build the persisted MarketData for a chosen candidate. */

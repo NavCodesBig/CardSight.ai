@@ -56,23 +56,44 @@ export function MarketValue({
     [scan.id, likelyPsa]
   );
 
-  // Auto-identify on first view. Hard-capped at 20s: OCR model download plus
-  // the price fetch can stall on a slow connection, and an endless spinner
-  // with no escape was the failure mode — time out into the manual search.
+  // Auto-identify on first view. The embedding recognizer's identity (already
+  // computed during analysis) is authoritative — only fall back to re-OCRing
+  // the photo when recognition missed. Hard-capped at 20s: OCR model download
+  // plus the price fetch can stall on a slow connection, and an endless
+  // spinner with no escape was the failure mode — time out into manual search.
   useEffect(() => {
     if (scan.market) return;
     let alive = true;
     (async () => {
       try {
         const identify = (async () => {
-          const { name, number } = await readCardText(scan.front.rectifiedDataUrl);
+          let name = scan.cardInfo.name;
+          let number = scan.cardInfo.number;
+          if (!name) {
+            const ocr = await readCardText(scan.front.rectifiedDataUrl);
+            name = ocr.name;
+            number = ocr.number;
+          }
           if (!alive) return;
-          if (name) setQuery(name);
+          // Keep the fields strictly separated: names never carry the
+          // collector number, numbers never carry text.
+          if (name) setQuery(cleanCardName(name));
           if (number) setNumberQuery(number);
-          const list = name ? await fetchCandidates(name, number) : [];
+          const list = name ? await fetchCandidates(cleanCardName(name), number) : [];
           if (!alive) return;
           setCandidates(list);
-          await choose({ name, number }, list[0] ?? null);
+          // The recognizer knows the exact set; the price API's own ranking
+          // only sees name+number and will happily surface a reprint first
+          // (Expedition #1 over Base Set #1). Same upstream data source on
+          // both sides, so exact normalized set-name equality is safe.
+          const bySet =
+            scan.cardInfo.set != null
+              ? list.find((c) => normSet(c.setName) === normSet(scan.cardInfo.set))
+              : undefined;
+          await choose(
+            { name: name ? cleanCardName(name) : null, number },
+            bySet ?? list[0] ?? null
+          );
         })();
         await Promise.race([
           identify,
@@ -272,6 +293,19 @@ export function MarketValue({
       </GlassCard>
     </section>
   );
+}
+
+function normSet(s: string | null | undefined): string {
+  return (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Strip collector numbers/fractions that OCR sometimes fuses onto the name,
+ *  so the name field holds only the name and the number field the number. */
+function cleanCardName(raw: string): string {
+  return raw
+    .replace(/\s*\d{1,3}\s*\/\s*[A-Za-z]*\d{1,3}.*$/, "")
+    .replace(/\s*#?\d{1,3}\s*$/, "")
+    .trim();
 }
 
 /** The candidate id currently shown, matched back from the selected card. */
