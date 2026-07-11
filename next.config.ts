@@ -12,6 +12,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Dev-only: phones on the LAN reach the dev server via the machine's IP,
+  // which Next treats as cross-origin and blocks for /_next dev
+  // assets/endpoints. Ignored by production builds.
+  allowedDevOrigins: ["192.168.68.*", "*.local"],
   async headers() {
     return [
       {
