@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/layout/Navbar";
 import { Backdrop } from "@/components/layout/Backdrop";
+import { RecognizerBoot } from "@/components/layout/RecognizerBoot";
 import { SITE_URL } from "@/lib/siteUrl";
 
 const geistSans = Geist({
@@ -78,6 +79,7 @@ export default function RootLayout({
       <body className="ambient flex min-h-full flex-col">
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
         <Backdrop />
+        <RecognizerBoot />
         <Navbar />
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-20 pt-8">
           {children}

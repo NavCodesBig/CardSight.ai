@@ -5,6 +5,12 @@
  */
 
 import { analyzeCard, type ProgressStage, type QuadHints } from "./analyze";
+import { installRecognizer } from "./recognition/installRecognizer";
+
+// The worker is its own JS context: the identifier installed on the main
+// thread does not exist here. Install at boot so identifyCard inside
+// analyzeCard uses the embedding recognizer (lazy; falls back to heuristic).
+installRecognizer();
 
 export interface WorkerRequest {
   front: Blob;

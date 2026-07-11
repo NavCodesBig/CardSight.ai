@@ -147,8 +147,18 @@ export async function analyzeCard(
     qualityFactor(frontFace.quality),
     qualityFactor(backFace.quality)
   );
+  // Cross-pass instability: if the three consensus passes disagreed by a full
+  // grade point or more, the measurement is crop-sensitive and the flat
+  // quality-only confidence was overstating certainty (every clean-photo scan
+  // used to report the same 92%).
+  const worstSpread = Math.max(
+    frontFace.passSpread ?? 0,
+    backFace.passSpread ?? 0
+  );
+  const stability = 1 - Math.min(0.35, worstSpread * 0.15);
   grade.confidence =
-    Math.round(grade.confidence * Math.min(1, avgDet / 0.75) * qual * 100) / 100;
+    Math.round(grade.confidence * Math.min(1, avgDet / 0.75) * qual * stability * 100) /
+    100;
   const companyEstimates = estimateCompanyGrades(grade.overall, grade.confidence);
   const submission = submissionRecommendation(grade.overall, grade.confidence);
   const explanations = explainGrade(frontFace, backFace, grade);
@@ -207,17 +217,31 @@ async function analyzeFace(
 
   onProgress("corners", base + 12);
   await tick();
-  const corners = consensusCorners(rects.map(analyzeCorners));
+  const cornerPasses = rects.map(analyzeCorners);
+  const corners = consensusCorners(cornerPasses);
 
   onProgress("edges", base + 18);
   await tick();
-  const edges = consensusEdges(rects.map(analyzeEdges));
+  const edgePasses = rects.map(analyzeEdges);
+  const edges = consensusEdges(edgePasses);
 
   onProgress("surface", base + 24);
   await tick();
-  const surface = consensusSurface(rects.map(analyzeSurface));
+  const surfacePasses = rects.map(analyzeSurface);
+  const surface = consensusSurface(surfacePasses);
 
   const cal = calibrate(rect0.width, rect0.height);
+
+  // Cross-pass stability: how far the three jittered passes disagreed, taken
+  // over every category. Stable measurements spread < 0.5 grade points; a
+  // crop-sensitive card (borderline centering, edge artifacts) spreads much
+  // wider and its confidence should say so.
+  const passSpread = Math.max(
+    spread(centerings.map((c) => c.score)),
+    spread(cornerPasses.map((p) => avg(p.map((c) => c.score)))),
+    spread(edgePasses.map((p) => avg(p.map((e) => e.score)))),
+    spread(surfacePasses.map((p) => p.score))
+  );
 
   return {
     rectifiedDataUrl: await imageDataToDataUrl(rect0, 0.82),
@@ -229,6 +253,7 @@ async function analyzeFace(
     edges,
     surface,
     mmPerPx: cal.mmPerPx,
+    passSpread,
   };
 }
 
@@ -341,6 +366,14 @@ function qualityFactor(q: FaceAnalysis["quality"]): number {
   if (q.tooDark || q.tooBright) f *= 0.8;
   if (q.tooFar) f *= 0.7;
   return f;
+}
+
+function spread(v: number[]): number {
+  return Math.max(...v) - Math.min(...v);
+}
+
+function avg(v: number[]): number {
+  return v.reduce((s, x) => s + x, 0) / (v.length || 1);
 }
 
 function meanRound(v: number[], decimals = 1): number {

@@ -52,3 +52,14 @@ datasets/eval/*
 
 # tesseract.js language models (downloaded on first headless OCR run)
 *.traineddata
+
+# Recognizer index deployed to the client (regenerate via scripts/build-embedding-index.ts)
+public/cardref/
+
+# Calibration photos (private)
+datasets/calibration/*
+!datasets/calibration/README.md
+
+# Synthetic segmentation training data (regenerate via scripts/gen-seg-data.ts)
+datasets/seg/
+training/out/

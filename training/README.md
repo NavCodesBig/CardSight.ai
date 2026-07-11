@@ -70,6 +70,32 @@ Key rules:
   8.5 must cost less than a 9 mistaken for 4.
 - Track per-subgrade MAE and within-half-point accuracy as headline metrics.
 
+## Segmentation detector (in progress — first trained model)
+
+The card *detector* is the first heuristic being replaced: classical
+first-strong-edge scanning locks onto clutter, art frames on full-bleed
+scans, and textured backgrounds (see lib/vision/cardDetector.ts patches).
+A tiny U-Net predicting the card silhouette fixes the whole failure class.
+
+Pipeline (all pieces exist):
+
+```
+npx tsx scripts/gen-seg-data.ts          # synthetic composites + exact masks
+python training/train_seg.py             # TinyUNet (~0.5M params), BCE+dice
+    → training/out/card-seg.onnx         # browser-ready export
+```
+
+Training data is free: reference scans composited onto varied backgrounds
+with pose/exposure/blur jitter; the composited alpha IS the mask. 15% of
+samples are card-free negatives. Add real photos with hand-drawn masks
+later to close the sim-to-real gap.
+
+Runtime integration (once val-dice is convincing): mask → largest
+quad-fit → replaces `detectCard`'s scanline stage, keeping the existing
+rectification, refinement, and trust gates. Inference via onnxruntime-web
+at 192×256 — sub-100 ms on a mid phone, and it also gives the live camera
+overlay a true lock indicator.
+
 ## Integration seam
 
 - `lib/analyze.ts` — swap heuristic scorers for model inference per face.

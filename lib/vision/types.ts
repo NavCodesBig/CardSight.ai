@@ -129,6 +129,11 @@ export interface FaceAnalysis {
   surface: SurfaceAnalysis;
   /** Millimeters per pixel of the rectified image. */
   mmPerPx: number;
+  /** Largest subgrade spread (max − min) observed across the three consensus
+   *  passes, in grade points. High spread ⇒ the measurement is sensitive to
+   *  the exact crop ⇒ the reported grade deserves less confidence. Optional:
+   *  absent on scans stored before this field existed. */
+  passSpread?: number;
 }
 
 export interface DetectionResult {
