@@ -124,7 +124,21 @@ body {
 /* ---------- Animations ---------- */
 @keyframes float-up {
   from { opacity: 0; transform: translateY(18px); }
-  to { opacity: 1; transform: translateY(0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Page-root entrance. Fade only — never put .animate-float-up on an element
+ * that contains `position: fixed` descendants (docked CTAs, modals): with
+ * `fill: both` Chromium keeps the transform effect active forever (computed
+ * identity matrix, not `none`), which makes the element a containing block
+ * and silently re-anchors fixed children to it instead of the viewport. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-page-in {
+  animation: fade-in 0.5s ease both;
 }
 
 .animate-float-up {

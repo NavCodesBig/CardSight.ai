@@ -118,7 +118,7 @@ export function CornerAdjust({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4 backdrop-blur-md">
-      <div className="glass-strong w-full max-w-lg overflow-hidden rounded-3xl">
+      <div className="glass-strong max-h-[100dvh] w-full max-w-lg overflow-y-auto rounded-3xl">
         <div className="flex items-center justify-between px-5 py-3">
           <span className="font-semibold">Adjust the corners</span>
           <button
@@ -135,7 +135,7 @@ export function CornerAdjust({
           that will be graded.
         </p>
 
-        <div className="flex gap-4 px-5">
+        <div className="flex flex-col gap-4 px-5 sm:flex-row">
           <div className="relative flex-1 touch-none select-none">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={imageUrl} alt="Captured card" className="w-full rounded-xl" />
@@ -173,27 +173,28 @@ export function CornerAdjust({
             </svg>
           </div>
 
-          <div className="shrink-0">
-            <div className="mb-1 text-center text-xs text-muted">Preview</div>
+          {/* Preview sits beside the hint on phones, in its own column on larger screens */}
+          <div className="flex shrink-0 items-center gap-3 sm:block">
             <canvas
               ref={previewRef}
               width={120}
               height={168}
-              className="rounded-lg bg-black/30 shadow-lg"
+              className="h-24 w-auto rounded-lg bg-black/30 shadow-lg sm:order-none sm:h-auto sm:w-[120px]"
             />
+            <div className="text-xs text-muted sm:mt-1 sm:text-center">Cropped preview</div>
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 p-5">
+        <div className="flex gap-2 p-5 sm:justify-end">
           <button
             onClick={onCancel}
-            className="glass rounded-xl px-5 py-2.5 text-sm font-semibold"
+            className="glass min-h-12 flex-1 rounded-xl px-5 text-sm font-semibold sm:flex-none"
           >
             Retake
           </button>
           <button
             onClick={() => onConfirm({ tl: pts[0], tr: pts[1], br: pts[2], bl: pts[3] })}
-            className="rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] px-5 py-2.5 text-sm font-semibold text-white"
+            className="min-h-12 flex-1 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] px-5 text-sm font-semibold text-white sm:flex-none"
           >
             Analyze this crop
           </button>
@@ -218,10 +219,13 @@ function detectSeed(img: HTMLImageElement, w: number, h: number): Quad | null {
   return { tl: m(det.quad.tl), tr: m(det.quad.tr), br: m(det.quad.br), bl: m(det.quad.bl) };
 }
 
-/** Default inset rectangle when detection can't seed the corners. */
+/** Default rectangle when detection can't seed the corners. Nearly full-frame:
+ *  detection most often fails on full-bleed uploads (digital scans, screenshots)
+ *  where the card IS the frame, and the pipeline's edge-snap can pull a
+ *  near-frame quad the last few pixels; a deep inset just cropped into the art. */
 function insetQuad(w: number, h: number): Quad {
-  const mx = w * 0.08;
-  const my = h * 0.06;
+  const mx = w * 0.02;
+  const my = h * 0.02;
   return {
     tl: { x: mx, y: my },
     tr: { x: w - mx, y: my },

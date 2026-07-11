@@ -31,7 +31,7 @@ export function PreviousScans({
         <h2 className="text-lg font-bold tracking-tight">{title}</h2>
         <Link
           href="/dashboard"
-          className="text-sm font-medium text-[var(--accent)] hover:underline"
+          className="-m-2 flex min-h-11 items-center p-2 text-sm font-medium text-[var(--accent)] hover:underline"
         >
           View all →
         </Link>

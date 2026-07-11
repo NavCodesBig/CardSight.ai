@@ -111,7 +111,7 @@ function Toggle({
     <button
       onClick={onClick}
       aria-pressed={on}
-      className={`rounded-full px-3 py-1 font-medium transition-colors ${
+      className={`min-h-10 rounded-full px-3.5 font-medium transition-colors ${
         on ? "bg-[var(--accent)]/20 text-[var(--accent)]" : "glass text-muted"
       }`}
     >

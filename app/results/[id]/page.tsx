@@ -60,9 +60,9 @@ export default function ResultsPage() {
   const label = gradeLabel(scan.grade.overall);
 
   return (
-    <div className="animate-float-up space-y-8">
+    <div className="animate-page-in space-y-8">
       {/* Hero */}
-      <GlassCard strong className="p-8">
+      <GlassCard strong className="p-5 sm:p-8">
         <div className="flex flex-col items-center gap-8 lg:flex-row lg:items-start">
           <div className="relative w-44 shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -73,7 +73,7 @@ export default function ResultsPage() {
             />
             <button
               onClick={async () => setFav(await toggleFavorite(scan.id))}
-              className="absolute -right-2 -top-2 grid h-9 w-9 place-items-center rounded-full glass-strong text-lg"
+              className="absolute -right-3 -top-3 grid h-11 w-11 place-items-center rounded-full glass-strong text-lg"
               aria-label="Toggle favorite"
             >
               {fav ? "★" : "☆"}
@@ -113,7 +113,7 @@ export default function ResultsPage() {
                   Limited by {SUBGRADE_META[scan.grade.limitingFactor].label.toLowerCase()}
                 </div>
                 <div className="mt-0.5 text-xs text-muted">
-                  Composite {scan.grade.composite ?? scan.grade.overall} · weakest-link final{" "}
+                  Composite {scan.grade.composite ?? scan.grade.overall} · final{" "}
                   {scan.grade.overall}
                 </div>
                 {scan.grade.range && (
@@ -180,7 +180,7 @@ export default function ResultsPage() {
                 key={f}
                 onClick={() => setFace(f)}
                 aria-pressed={face === f}
-                className={`rounded-full px-4 py-1.5 capitalize transition-colors ${
+                className={`min-h-10 rounded-full px-5 capitalize transition-colors ${
                   face === f ? "bg-[var(--accent)] text-white" : "text-muted"
                 }`}
               >
@@ -269,10 +269,10 @@ export default function ResultsPage() {
         </div>
       </section>
 
-      <div className="flex flex-wrap justify-center gap-3 pt-4 sm:gap-4">
+      <div className="flex flex-col items-stretch gap-3 pt-4 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4">
         <Link
           href="/scan"
-          className="rounded-2xl bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] px-8 py-3.5 font-semibold text-white shadow-xl transition-transform hover:scale-[1.03]"
+          className="rounded-2xl bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] px-8 py-3.5 text-center font-semibold text-white shadow-xl transition-transform hover:scale-[1.03]"
         >
           Scan another card
         </Link>
@@ -290,7 +290,10 @@ export default function ResultsPage() {
         >
           {sharing ? "Rendering…" : "📤 Share report"}
         </button>
-        <Link href="/dashboard" className="glass rounded-2xl px-8 py-3.5 font-semibold">
+        <Link
+          href="/dashboard"
+          className="glass rounded-2xl px-8 py-3.5 text-center font-semibold"
+        >
           Dashboard
         </Link>
       </div>

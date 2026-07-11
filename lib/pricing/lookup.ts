@@ -24,7 +24,9 @@ export async function fetchCandidates(
 ): Promise<Candidate[]> {
   const params = new URLSearchParams({ name: name.trim() });
   if (number) params.set("number", number);
-  const res = await fetch(`/api/price?${params.toString()}`);
+  const res = await fetch(`/api/price?${params.toString()}`, {
+    signal: AbortSignal.timeout(12000),
+  });
   if (!res.ok && res.status !== 200) throw new Error(`Price lookup failed (${res.status})`);
   const data = (await res.json()) as { results?: Candidate[] };
   return data.results ?? [];

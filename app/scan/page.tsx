@@ -75,7 +75,7 @@ export default function ScanPage() {
   }, [front, back, frontQuad, backQuad, router]);
 
   return (
-    <div className="animate-float-up">
+    <div className="animate-page-in">
       <header className="text-center">
         <h1 className="text-4xl font-bold tracking-tight">
           Scan your <span className="text-gradient">card</span>
@@ -131,11 +131,19 @@ export default function ScanPage() {
         <p className="mt-6 text-center text-sm font-medium text-rose-400">{error}</p>
       )}
 
-      <div className="mt-10 text-center">
+      {/* On phones the ready-to-go CTA docks to the bottom of the screen so
+          it stays reachable without scrolling back past the capture zones. */}
+      <div
+        className={`mt-10 text-center ${
+          front && back && !processing
+            ? "max-sm:fixed max-sm:inset-x-4 max-sm:bottom-[max(1rem,env(safe-area-inset-bottom))] max-sm:z-40 max-sm:mt-0"
+            : ""
+        }`}
+      >
         <button
           onClick={run}
           disabled={!front || !back || processing}
-          className="rounded-2xl bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] px-10 py-4 font-semibold text-white shadow-xl transition-all enabled:hover:scale-[1.03] disabled:opacity-40"
+          className="w-full rounded-2xl bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] px-10 py-4 font-semibold text-white shadow-xl transition-all enabled:hover:scale-[1.03] disabled:opacity-40 sm:w-auto"
         >
           {front && back ? "Analyze card" : "Add both photos to continue"}
         </button>
@@ -156,6 +164,9 @@ export default function ScanPage() {
       <div className="mt-12">
         <PreviousScans />
       </div>
+
+      {/* Clearance for the docked mobile CTA */}
+      {front && back && !processing && <div className="h-20 sm:hidden" />}
 
       {processing && <ProcessingOverlay stage={stage} pct={pct} previewUrl={previewUrl} />}
     </div>

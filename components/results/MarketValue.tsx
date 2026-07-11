@@ -56,20 +56,30 @@ export function MarketValue({
     [scan.id, likelyPsa]
   );
 
-  // Auto-identify on first view.
+  // Auto-identify on first view. Hard-capped at 20s: OCR model download plus
+  // the price fetch can stall on a slow connection, and an endless spinner
+  // with no escape was the failure mode — time out into the manual search.
   useEffect(() => {
     if (scan.market) return;
     let alive = true;
     (async () => {
       try {
-        const { name, number } = await readCardText(scan.front.rectifiedDataUrl);
-        if (!alive) return;
-        if (name) setQuery(name);
-        if (number) setNumberQuery(number);
-        const list = name ? await fetchCandidates(name, number) : [];
-        if (!alive) return;
-        setCandidates(list);
-        await choose({ name, number }, list[0] ?? null);
+        const identify = (async () => {
+          const { name, number } = await readCardText(scan.front.rectifiedDataUrl);
+          if (!alive) return;
+          if (name) setQuery(name);
+          if (number) setNumberQuery(number);
+          const list = name ? await fetchCandidates(name, number) : [];
+          if (!alive) return;
+          setCandidates(list);
+          await choose({ name, number }, list[0] ?? null);
+        })();
+        await Promise.race([
+          identify,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("identify timeout")), 20000)
+          ),
+        ]);
       } catch {
         if (alive) setStatus("error");
       }
@@ -111,7 +121,8 @@ export function MarketValue({
           <>
             {status === "error" && (
               <p className="mb-4 text-sm text-rose-400">
-                Couldn&apos;t reach the price service. Search by name below to retry.
+                Couldn&apos;t identify the card automatically (slow connection or
+                unreadable text). Search by name below.
               </p>
             )}
 
@@ -201,7 +212,7 @@ export function MarketValue({
                     <button
                       key={c.id}
                       onClick={() => choose(selected?.query ?? { name: query, number: null }, c)}
-                      className="flex items-center gap-3 rounded-xl px-2 py-1.5 text-left text-sm hover:bg-[var(--card-border)]/40"
+                      className="flex min-h-12 items-center gap-3 rounded-xl px-2 py-1.5 text-left text-sm hover:bg-[var(--card-border)]/40"
                     >
                       {c.imageUrl && (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -235,18 +246,17 @@ export function MarketValue({
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Card name (e.g. Charizard)"
-                  className="flex-1 rounded-xl border border-[var(--card-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+                  className="min-h-11 flex-1 rounded-xl border border-[var(--card-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
                 />
                 <input
                   value={numberQuery}
                   onChange={(e) => setNumberQuery(e.target.value)}
-                  placeholder="No. (e.g. 3)"
-                  inputMode="numeric"
-                  className="rounded-xl border border-[var(--card-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--accent)] sm:w-28"
+                  placeholder="No. (e.g. 3/102)"
+                  className="min-h-11 rounded-xl border border-[var(--card-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--accent)] sm:w-32"
                 />
                 <button
                   type="submit"
-                  className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                  className="min-h-11 rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
                   disabled={query.trim().length < 2}
                 >
                   Search

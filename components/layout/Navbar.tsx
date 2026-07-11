@@ -31,7 +31,7 @@ export function Navbar() {
             <Link
               key={l.href}
               href={l.href}
-              className={`rounded-xl px-2.5 py-2.5 text-sm font-medium transition-colors sm:px-3.5 sm:py-2 ${
+              className={`flex min-h-11 items-center rounded-xl px-3 text-sm font-medium transition-colors sm:min-h-0 sm:px-3.5 sm:py-2 ${
                 l.href === "/" ? "hidden sm:block" : ""
               } ${
                 pathname === l.href
