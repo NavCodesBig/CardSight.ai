@@ -4,8 +4,13 @@
  * Combines front + back face analyses into four subgrades then an overall
  * grade, following the rules DCM Grading publishes:
  *   • Front is weighted 55%, back 45% (front is the primary display side).
- *   • The final grade can never exceed the lowest component subgrade
- *     (weakest-link rule, matching PSA/BGS/SGC).
+ *   • Damage categories (corners, edges, surface) are strict weakest-link:
+ *     the final grade can never exceed the lowest of them.
+ *   • Centering caps the grade *softly* (lowest + 2). Real grading treats
+ *     off-centering more leniently than damage — PSA gives an otherwise-mint
+ *     but badly off-center card a mid grade (or an OC qualifier), never the
+ *     near-minimum a strict weakest-link rule would produce. Strict capping
+ *     here turned a 10/9/9 card with miscut centering into an overall 2.
  *   • Structural damage (crushed corners, deep dents/creases) triggers an
  *     automatic cap regardless of how clean the rest of the card is.
  * Subgrades themselves are produced by three-pass consensus upstream
@@ -61,11 +66,20 @@ export function computeGrade(front: FaceAnalysis, back: FaceAnalysis): GradeResu
       subgrades.surface * SUBGRADE_WEIGHTS.surface
   );
 
-  const entries = Object.entries(subgrades) as [SubgradeKey, number][];
-  const [limitingFactor, minSub] = entries.reduce((a, b) => (b[1] < a[1] ? b : a));
+  // Damage categories are strict weakest-link; centering caps softly (+2),
+  // mirroring how PSA/BGS actually treat off-center-but-clean cards.
+  const damageEntries = entries(subgrades).filter(([k]) => k !== "centering");
+  const [damageKey, damageMin] = damageEntries.reduce((a, b) => (b[1] < a[1] ? b : a));
+  const centeringCap = subgrades.centering >= 8 ? 10 : subgrades.centering + 2;
+  let overall = Math.min(composite, damageMin, centeringCap);
 
-  // Weakest-link: the final grade cannot exceed the lowest subgrade.
-  let overall = Math.min(composite, minSub);
+  // Whichever constraint actually bound the grade is the limiting factor.
+  const limitingFactor: SubgradeKey =
+    centeringCap < Math.min(composite, damageMin)
+      ? "centering"
+      : damageMin < composite
+        ? damageKey
+        : entries(subgrades).reduce((a, b) => (b[1] < a[1] ? b : a))[0];
 
   // Structural-damage auto-cap. Thresholds are deliberately high so ordinary
   // wear never trips them — only clearly severe damage caps the grade.
@@ -125,6 +139,10 @@ function structuralDamageCap(front: FaceAnalysis, back: FaceAnalysis): number | 
 
 function avg(v: number[]): number {
   return v.reduce((s, x) => s + x, 0) / (v.length || 1);
+}
+
+function entries(o: Subgrades): [SubgradeKey, number][] {
+  return Object.entries(o) as [SubgradeKey, number][];
 }
 
 function roundHalf(v: number): number {

@@ -99,7 +99,9 @@ export function explainGrade(
     const label = gradeLabel(result.overall);
     const points: string[] = [
       `Front and back are weighted 55% / 45%. Each face's subgrades blend centering 25%, corners 25%, edges 20%, surface 30% into a composite of ${result.composite}.`,
-      `Weakest-link rule: the final grade cannot exceed the lowest subgrade, so ${result.limitingFactor} (${result.subgrades[result.limitingFactor]}) sets the ceiling here — final ${result.overall} (${label.label}).`,
+      result.limitingFactor === "centering"
+        ? `Centering cap: off-centering limits the grade softly (subgrade + 2, the way graders treat clean-but-off-center cards), so centering (${result.subgrades.centering}) caps this card at ${result.overall} (${label.label}).`
+        : `Weakest-link rule: the final grade cannot exceed the lowest damage subgrade, so ${result.limitingFactor} (${result.subgrades[result.limitingFactor]}) sets the ceiling here — final ${result.overall} (${label.label}).`,
       `Reported as a likely range of ${result.range.low}–${result.range.high}: a photo-based estimate can't pin a half-point exactly, so treat the single number as the midpoint.`,
     ];
     if (result.structuralCap !== null) {

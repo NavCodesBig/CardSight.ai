@@ -16,6 +16,9 @@ import type { CenteringMeasurement } from "./types";
 const SCAN_DEPTH_FRAC = 0.22; // search the outer 22% of each dimension
 const COLOR_THRESHOLD = 42; // Euclidean RGB distance marking the frame line
 const RUN_LENGTH = 4; // departure must persist this many px
+const REF_START = 5; // reference window start (skips warp fringe)
+const REF_END = 15; // reference window end (exclusive)
+const MIN_BORDER = 8; // departures shallower than this are fringe, not frame
 
 export function measureCentering(rect: ImageData): CenteringMeasurement {
   const { width: w, height: h } = rect;
@@ -80,17 +83,22 @@ function medianBorder(rect: ImageData, side: "left" | "right" | "top" | "bottom"
   const widths: number[] = [];
 
   for (let line = lineStart; line < lineEnd; line += 4) {
-    // Reference color: average of px 3..9 from the edge on this scanline.
-    let rr = 0, rg = 0, rb = 0, n = 0;
-    for (let d = 3; d < 10; d++) {
+    // Reference color: per-channel *median* over px 5..14 from the edge.
+    // Rectification leaves a 1–3 px dark fringe of background bleed at the
+    // very edge; a mean over px 3..9 let that fringe poison the reference,
+    // which made the frame-line "departure" fire immediately and reported
+    // absurd borders (1 mm vs 9.7 mm on a perfectly centered card). A median
+    // over a deeper window is immune to a few contaminated samples.
+    const rs: number[] = [], gs: number[] = [], bs: number[] = [];
+    for (let d = REF_START; d < REF_END; d++) {
       const [r, g, b] = px(rect, side, line, d);
-      rr += r; rg += g; rb += b; n++;
+      rs.push(r); gs.push(g); bs.push(b);
     }
-    rr /= n; rg /= n; rb /= n;
+    const rr = median(rs), rg = median(gs), rb = median(bs);
 
     let run = 0;
     let found = -1;
-    for (let d = 10; d < scanLen; d++) {
+    for (let d = REF_START; d < scanLen; d++) {
       const [r, g, b] = px(rect, side, line, d);
       const dist = Math.hypot(r - rr, g - rg, b - rb);
       if (dist > COLOR_THRESHOLD) {
@@ -103,12 +111,18 @@ function medianBorder(rect: ImageData, side: "left" | "right" | "top" | "bottom"
         run = 0;
       }
     }
-    if (found > 0) widths.push(found);
+    // A departure shallower than any real border is residual fringe or a
+    // contaminated scanline — drop it rather than let it skew the median.
+    if (found >= MIN_BORDER) widths.push(found);
   }
 
   if (widths.length === 0) return Math.floor(scanLen / 2);
-  widths.sort((a, b) => a - b);
-  return widths[Math.floor(widths.length / 2)];
+  return median(widths);
+
+  function median(v: number[]): number {
+    const s = [...v].sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)];
+  }
 
   function px(img: ImageData, s: typeof side, lineIdx: number, depth: number): [number, number, number] {
     let x: number, y: number;

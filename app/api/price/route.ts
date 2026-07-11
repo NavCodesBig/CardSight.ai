@@ -29,7 +29,7 @@ interface TcgCard {
   rarity?: string;
   supertype?: string;
   subtypes?: string[];
-  set?: { name?: string; releaseDate?: string };
+  set?: { name?: string; releaseDate?: string; printedTotal?: number };
   images?: { small?: string; large?: string };
   tcgplayer?: { url?: string; prices?: Record<string, { market?: number | null }> };
   cardmarket?: { prices?: { trendPrice?: number; averageSellPrice?: number } };
@@ -55,6 +55,7 @@ export async function GET(request: Request) {
   // ("4/102"). Normalize to that token so both the query and the rank compare
   // hit — otherwise "4/102" → "4102" would match nothing.
   const cleanNumber = normalizeCollectorNumber(number);
+  const printedTotal = denominatorOf(number);
   const q = cleanNumber ? `${nameQuery} number:${cleanNumber}` : nameQuery;
 
   const headers: Record<string, string> = {};
@@ -70,7 +71,9 @@ export async function GET(request: Request) {
   const pool =
     cards.length === 0 && cleanNumber ? (await search(nameQuery, headers)) ?? [] : cards;
 
-  const results = rank(pool, cleanNumber ?? null).slice(0, MAX_RESULTS).map(toCandidate);
+  const results = rank(pool, cleanNumber ?? null, printedTotal)
+    .slice(0, MAX_RESULTS)
+    .map(toCandidate);
 
   return NextResponse.json(
     { results },
@@ -112,13 +115,29 @@ function normalizeCollectorNumber(raw: string | null): string | null {
     : token.replace(/^0+(?=\d)/, "").toLowerCase();
 }
 
-/** Rank: exact number match first, then priced cards, then most recent. */
-function rank(cards: TcgCard[], number: string | null): TcgCard[] {
+/**
+ * The denominator of a printed fraction ("4/102" → 102) — it names the set's
+ * printed total, the strongest signal for which era's reprint the user holds.
+ */
+function denominatorOf(raw: string | null): number | null {
+  const m = raw?.trim().match(/\/\s*[A-Za-z]*0*(\d{1,3})/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/** Rank: exact number match, then set printed-total match (era), then priced
+ *  cards, then most recent. Without the printed-total tier, "Alakazam 1/102"
+ *  surfaced the Expedition reprint above Base Set purely on recency. */
+function rank(cards: TcgCard[], number: string | null, total: number | null): TcgCard[] {
   return [...cards].sort((a, b) => {
     if (number) {
       const am = normalizeCollectorNumber(a.number) === number ? 1 : 0;
       const bm = normalizeCollectorNumber(b.number) === number ? 1 : 0;
       if (am !== bm) return bm - am;
+    }
+    if (total != null) {
+      const at = a.set?.printedTotal === total ? 1 : 0;
+      const bt = b.set?.printedTotal === total ? 1 : 0;
+      if (at !== bt) return bt - at;
     }
     const ap = pickPrice(a) ? 1 : 0;
     const bp = pickPrice(b) ? 1 : 0;

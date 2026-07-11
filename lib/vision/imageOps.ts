@@ -16,6 +16,19 @@ export async function fileToImageData(
   file: Blob,
   maxDim = 1400
 ): Promise<ImageData> {
+  return (await fileToImageDataScaled(file, maxDim)).image;
+}
+
+/**
+ * Like fileToImageData, but also reports the downscale factor applied (≤ 1).
+ * Anything expressed in the file's natural pixel coordinates — e.g. a
+ * corner-adjust quad — must be multiplied by `scale` before being used
+ * against the returned image, or it addresses the wrong region entirely.
+ */
+export async function fileToImageDataScaled(
+  file: Blob,
+  maxDim = 1400
+): Promise<{ image: ImageData; scale: number }> {
   const source = await decodeWithOrientation(file);
   const scale = Math.min(1, maxDim / Math.max(source.width, source.height));
   const w = Math.max(1, Math.round(source.width * scale));
@@ -23,7 +36,7 @@ export async function fileToImageData(
   const ctx = make2dContext(w, h);
   ctx.drawImage(source, 0, 0, w, h);
   if (source instanceof ImageBitmap) source.close();
-  return ctx.getImageData(0, 0, w, h);
+  return { image: ctx.getImageData(0, 0, w, h), scale };
 }
 
 async function decodeWithOrientation(

@@ -114,8 +114,12 @@ function cleanName(raw: string): string | null {
 
 function cleanNumber(raw: string): string | null {
   const flat = raw.replace(/\s+/g, "");
+  // Keep the full printed fraction ("4/102"): the numerator identifies the
+  // card within a set, but the denominator identifies the *set* (its printed
+  // total) — without it "Alakazam 1" matches every era's #1 reprint and the
+  // price ranker can't tell Base Set from Expedition.
   const frac = flat.match(/(\d{1,3})\/(\d{1,3})/);
-  if (frac) return frac[1].replace(/^0+(?=\d)/, "");
+  if (frac) return `${frac[1].replace(/^0+(?=\d)/, "")}/${frac[2]}`;
   const solo = flat.match(/[A-Z]{0,3}\d{1,3}/);
   return solo ? solo[0] : null;
 }

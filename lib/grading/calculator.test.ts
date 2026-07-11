@@ -114,6 +114,20 @@ describe("computeGrade", () => {
     expect(g.limitingFactor).toBe("corners");
   });
 
+  it("caps centering softly: off-center but otherwise mint lands mid-grade", () => {
+    // Miscut-level centering on a mint card: PSA territory is ~4-5, not 2.
+    const face = makeFace({ centering: 2, corners: 10, edges: 9, surface: 9 });
+    const g = computeGrade(face, face);
+    expect(g.overall).toBe(4); // centering (2) + 2 soft cap
+    expect(g.limitingFactor).toBe("centering");
+  });
+
+  it("does not let the centering cap bind when centering is near-mint", () => {
+    const face = makeFace({ centering: 8, corners: 9, edges: 9, surface: 9 });
+    const g = computeGrade(face, face);
+    expect(g.overall).toBeGreaterThanOrEqual(8);
+  });
+
   it("auto-caps on structural damage regardless of subgrades", () => {
     // Clean subgrades, but a crushed corner (heavy whitening + lost sharpness).
     const face = makeFace({

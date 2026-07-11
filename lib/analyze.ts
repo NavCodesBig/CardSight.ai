@@ -5,7 +5,14 @@
  * integration point for future server-side model inference.
  */
 
-import { detectCardOriented, quadCoverage, rectifyCard } from "./vision/cardDetector";
+import {
+  detectCard,
+  detectCardOriented,
+  quadAgreement,
+  quadCoverage,
+  rectifyCard,
+  refineQuad,
+} from "./vision/cardDetector";
 import type {
   Quad,
   Point,
@@ -14,7 +21,7 @@ import type {
   EdgeAnalysis,
   SurfaceAnalysis,
 } from "./vision/types";
-import { fileToImageData, imageDataToDataUrl } from "./vision/imageOps";
+import { fileToImageDataScaled, imageDataToDataUrl } from "./vision/imageOps";
 import { assessQuality } from "./vision/quality";
 import { measureCentering } from "./vision/centering";
 import { analyzeCorners } from "./vision/corners";
@@ -90,17 +97,24 @@ export async function analyzeCard(
   hints?: QuadHints
 ): Promise<ScanResult> {
   onProgress("loading", 4);
-  const [frontImg, backImg] = await Promise.all([
-    fileToImageData(frontFile),
-    fileToImageData(backFile),
+  const [frontLoaded, backLoaded] = await Promise.all([
+    fileToImageDataScaled(frontFile),
+    fileToImageDataScaled(backFile),
   ]);
 
   onProgress("detecting", 14);
   await tick();
   // Prefer the quad the user confirmed in live view; otherwise detect (and
-  // auto-correct landscape-oriented photos) from the image itself.
-  const front = faceDetect(frontImg, hints?.front);
-  const back = faceDetect(backImg, hints?.back);
+  // auto-correct landscape-oriented photos) from the image itself. Hints are
+  // in the file's natural pixel coordinates, but the decoded image may be
+  // downscaled — map them into image space or they address the wrong region
+  // (this mismatch is what produced 1 mm-vs-9.7 mm borders on a perfectly
+  // centered card).
+  const front = faceDetect(
+    frontLoaded.image,
+    scaleQuad(hints?.front, frontLoaded.scale)
+  );
+  const back = faceDetect(backLoaded.image, scaleQuad(hints?.back, backLoaded.scale));
   const frontDet = front.detection;
   const backDet = back.detection;
 
@@ -219,15 +233,43 @@ async function analyzeFace(
 }
 
 /**
- * Resolve a face's card quad: trust the live-view hint when present (the user
- * visually confirmed the lock), else fall back to detecting from the image.
+ * Resolve a face's card quad. A live-view or corner-adjust hint is used but
+ * not blindly trusted: the sides are first snapped to the strongest nearby
+ * edges (a hand-confirmed quad — especially an untouched default — is
+ * routinely off the physical card edge), then cross-checked against full
+ * auto-detection. Agreement earns high confidence; a hint that neither
+ * snapped nor matches the detector is scored low so the honesty gate damps
+ * every downstream precision claim. No hint → detect from the image.
  */
 function faceDetect(
   img: ImageData,
   hint: Quad | null | undefined
 ): { image: ImageData; detection: { quad: Quad; confidence: number } } {
-  if (hint) return { image: img, detection: { quad: hint, confidence: 0.9 } };
-  return detectCardOriented(img);
+  if (!hint) return detectCardOriented(img);
+
+  const refined = refineQuad(img, hint);
+  const auto = detectCard(img);
+  let confidence: number;
+  if (auto.confidence >= 0.5 && quadAgreement(refined.quad, auto.quad) >= 0.97) {
+    // Independent detection lands on the same card outline.
+    confidence = 0.95;
+  } else if (refined.snappedSides >= 2) {
+    // No detector confirmation, but the sides locked onto real edges.
+    confidence = 0.8;
+  } else {
+    // Pure hand crop with no supporting edge evidence — usable for display,
+    // but sub-millimeter measurements from it can't be trusted.
+    confidence = 0.55;
+  }
+  return { image: img, detection: { quad: refined.quad, confidence } };
+}
+
+/** Map a natural-coordinate quad into decoded-image space (see above). */
+function scaleQuad(q: Quad | null | undefined, scale: number): Quad | null {
+  if (!q) return null;
+  if (scale === 1) return q;
+  const s = (p: Point): Point => ({ x: p.x * scale, y: p.y * scale });
+  return { tl: s(q.tl), tr: s(q.tr), br: s(q.br), bl: s(q.bl) };
 }
 
 function jitterQuad(q: Quad, dx: number, dy: number): Quad {
