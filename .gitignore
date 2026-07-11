@@ -53,8 +53,10 @@ datasets/eval/*
 # tesseract.js language models (downloaded on first headless OCR run)
 *.traineddata
 
-# Recognizer index deployed to the client (regenerate via scripts/build-embedding-index.ts)
-public/cardref/
+# Recognizer index under public/cardref IS committed (~2.6MB): Vercel serves
+# static files straight from the repo, so ignoring it silently downgrades
+# deployed recognition to the heuristic. Regenerate via
+# scripts/build-embedding-index.ts when the catalog grows.
 
 # Calibration photos (private)
 datasets/calibration/*
