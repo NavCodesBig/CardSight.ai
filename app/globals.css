@@ -3,25 +3,37 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f6f7fb;
+  --background: #f7f6f2;
   --foreground: #10121a;
   --muted: #5b6070;
   --card-glass: rgba(255, 255, 255, 0.65);
   --card-border: rgba(16, 18, 26, 0.08);
   --accent: #6d5cff;
   --accent-2: #00c8ff;
-  --glow: rgba(109, 92, 255, 0.25);
+  --glow: rgba(109, 92, 255, 0.12);
+  --glow-warm: rgba(196, 154, 88, 0.1);
+  --grid-line: rgba(16, 18, 26, 0.028);
+  --grid-major: rgba(16, 18, 26, 0.05);
+  --motif-stroke: rgba(16, 18, 26, 0.1);
+  --motif-accent: rgba(158, 118, 48, 0.38);
+  --motif-sweep: rgba(109, 92, 255, 0.1);
 }
 
 .dark {
-  --background: #07080d;
+  --background: #090a10;
   --foreground: #eef0f6;
   --muted: #9aa1b5;
   --card-glass: rgba(255, 255, 255, 0.045);
   --card-border: rgba(255, 255, 255, 0.09);
   --accent: #8b7bff;
   --accent-2: #38d6ff;
-  --glow: rgba(139, 123, 255, 0.35);
+  --glow: rgba(120, 105, 235, 0.16);
+  --glow-warm: rgba(212, 175, 110, 0.07);
+  --grid-line: rgba(235, 238, 255, 0.03);
+  --grid-major: rgba(235, 238, 255, 0.055);
+  --motif-stroke: rgba(230, 235, 255, 0.085);
+  --motif-accent: rgba(212, 175, 110, 0.28);
+  --motif-sweep: rgba(139, 123, 255, 0.14);
 }
 
 @theme inline {
@@ -63,16 +75,41 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-/* ---------- Ambient gradient backdrop ---------- */
+/* ---------- Grading-bench backdrop ----------
+ * Two fixed layers behind everything:
+ *  ::before — restrained tonal washes (cool over the work area, a warm
+ *             lamp-glow low in the frame), plus a soft edge vignette.
+ *  ::after  — draftsman measurement grid, radially masked so it reads as
+ *             a lit bench surface rather than wall-to-wall graph paper.
+ * The card-outline motif itself lives in components/layout/Backdrop.tsx. */
 .ambient::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -2;
   background:
-    radial-gradient(60rem 40rem at 15% -10%, var(--glow), transparent 60%),
-    radial-gradient(50rem 35rem at 110% 20%, rgba(0, 200, 255, 0.12), transparent 60%),
-    radial-gradient(40rem 40rem at 50% 120%, rgba(255, 92, 180, 0.08), transparent 60%);
+    radial-gradient(70rem 44rem at 22% -12%, var(--glow), transparent 65%),
+    radial-gradient(56rem 42rem at 88% 108%, var(--glow-warm), transparent 65%);
+  pointer-events: none;
+}
+
+.ambient::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+  background-size:
+    44px 44px,
+    44px 44px,
+    220px 220px,
+    220px 220px;
+  mask-image: radial-gradient(110rem 62rem at 50% 10%, black 15%, transparent 70%);
+  -webkit-mask-image: radial-gradient(110rem 62rem at 50% 10%, black 15%, transparent 70%);
   pointer-events: none;
 }
 
@@ -128,6 +165,17 @@ body {
 
 .animate-scanline {
   animation: scanline 2.6s ease-in-out infinite;
+}
+
+/* Backdrop motif: slow scanner pass over the card outline */
+@keyframes bench-sweep {
+  0%, 12% { transform: translateY(0); }
+  50%, 62% { transform: translateY(74%); }
+  100% { transform: translateY(0); }
+}
+
+.animate-bench-sweep {
+  animation: bench-sweep 16s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
 @keyframes spin-slow {
